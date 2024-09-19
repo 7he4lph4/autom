@@ -1,0 +1,1332 @@
+<drac2>
+#auto
+pref = ctx.prefix
+null = ''
+nl = '\n'
+comma = ','
+al = ctx.alias
+cmd = pref+al
+args = argparse(&ARGS&)
+
+cname_list, monst_name_list, command_list, combatant_mismatch = [],[],[],[]
+multiattack, spell_viable, counter = False, False, 0
+
+raw_inp = "&*&"
+inp = "&*&".lower().replace('"', '')
+inp1 = "&1&"
+inp2 = "&2&"
+inp3 = "&3&"
+
+using(
+    autolib="ec14bc6e-81e4-4df7-86e9-5d64ed2fa9b7"
+)
+
+help_text = f"""How to use `{cmd}`:
+
+- Start combat initiative with `{pref}i begin`, and add all the necessary players and monsters
+    - *Pro Tip*: use the [Encounter Generator](https://avrae.io/dashboard/workshop/654fbc27ac7cd2bc90723133/) alias to quickly setup a balanced encounter for any party
+- Once all monsters and players are added, use `{cmd}` to auto-magically add the *Map* combatant
+- Use `{cmd} map list` to see all preset maps
+- Use `{cmd} map <map name>` to load one of the preset maps
+- Or, simply use `{cmd}` again to randomly pick one of the preset maps
+    - (ideally you can keep spamming `{cmd}` after adding all players and monsters to combat initiative)
+- Use `{cmd}` to automate all monsters until the next player in combat initiative
+
+This alias relies on the OTFBM backend service for map generation. They have server costs to cover, so please consider supporting their work through their [Patreon page](https://www.patreon.com/otfbm) if you're able
+
+You can also support the development of this alias on [Ko-fi](https://ko-fi.com/hedy4u)!
+"""
+
+help_title = f'{name} needs help breathing life into these monsters!'
+title = help_title
+desc_text = help_text
+footer = f'{cmd} help | made by @alpha983'
+
+command = f"""multiline{nl}"""
+
+c = combat()
+
+if not c:
+    title = f'{cmd} works best when used with a combat initiative full of player characters and monsters!'
+    desc = 'Please start initiative and add your players and  monsters.'
+    return f'embed -title "{title}" -desc "{desc_text}" -footer "{footer}"'
+
+combatants = c.combatants
+
+# Map-related variables
+bbcode = """
+[url=https://ibb.co/TW0G3zm][img]https://i.ibb.co/y4kCjLW/Arena-of-Earth-Desert-Day-32x24.jpg[/img][/url]
+[url=https://ibb.co/KxbXvj7][img]https://i.ibb.co/yFdXjn5/Arena-of-Earth-Desert-Night-32x24.jpg[/img][/url]
+[url=https://ibb.co/h87YZkY][img]https://i.ibb.co/s3mW6hW/Arena-of-Earth-Jade-Day-32x24.jpg[/img][/url]
+[url=https://ibb.co/wLLbXvd][img]https://i.ibb.co/PYYbnSr/Arena-of-Earth-Jade-Day-Retracted-Stairs-Overlay-22x22.jpg[/img][/url]
+[url=https://ibb.co/r4nZSNZ][img]https://i.ibb.co/PwB5n05/Beach-Dunes-32x22.jpg[/img][/url]
+[url=https://ibb.co/Jzk5ghD][img]https://i.ibb.co/1928jSF/Crab-Rock-Seaside-Clear-31x23.jpg[/img][/url]
+[url=https://ibb.co/1Qxrqx1][img]https://i.ibb.co/NCz9jz5/Crab-Rock-Seaside-Dreary-31x23.jpg[/img][/url]
+[url=https://ibb.co/zXph82q][img]https://i.ibb.co/F52bsYR/Crystal-Hill-25x17.jpg[/img][/url]
+[url=https://ibb.co/YdkQNLf][img]https://i.ibb.co/8x5sm7P/Desert-Island-Tropical-Day-31x23.jpg[/img][/url]
+[url=https://ibb.co/28sWx1B][img]https://i.ibb.co/5YnGmgV/Desert-Island-Tropical-Night-31x23.jpg[/img][/url]
+[url=https://ibb.co/JRZ7xF0][img]https://i.ibb.co/hR0WX1h/Desert-Crossroads-Gridded-32x21-Map-Public.jpg[/img][/url]
+[url=https://ibb.co/GkNRynS][img]https://i.ibb.co/DkTQhz2/Desert-Oasis-25x17.jpg[/img][/url]
+[url=https://ibb.co/HP0WHpT][img]https://i.ibb.co/gWG5RFZ/Fallen-Star-Fallen-Star-Day-31x23.jpg[/img][/url]
+[url=https://ibb.co/xYGP0dH][img]https://i.ibb.co/jzGB2sR/Fallen-Star-Fallen-Star-Night-31x23.jpg[/img][/url]
+[url=https://ibb.co/cwHBJZb][img]https://i.ibb.co/bFZ01CH/Fighting-Pit-Muddy-Dark-16x10.jpg[/img][/url]
+[url=https://ibb.co/TYZ5BfR][img]https://i.ibb.co/ckPdcBt/Fighting-Pit-Muddy-Light-27x18.jpg[/img][/url]
+[url=https://ibb.co/QfDRW0s][img]https://i.ibb.co/KXKktnC/Green-Hill-Old-Oak-Day-32x22.jpg[/img][/url]
+[url=https://ibb.co/m8WP5p4][img]https://i.ibb.co/FVTd4pz/Green-Hill-Old-Oak-Day-Canopy-32x22.jpg[/img][/url]
+[url=https://ibb.co/cbt4BrT][img]https://i.ibb.co/FsJRrD7/Green-Hill-Old-Oak-Night-32x22.jpg[/img][/url]
+[url=https://ibb.co/qdNLyQm][img]https://i.ibb.co/37p5rZS/Green-Hill-Old-Oak-Night-Canopy-32x22.jpg[/img][/url]
+[url=https://ibb.co/hX4vtyV][img]https://i.ibb.co/B4QRStB/Greybanner-Coliseum-Day-Large-31x23.jpg[/img][/url]
+[url=https://ibb.co/SXPg6tx][img]https://i.ibb.co/Rp9Kg3S/Greybanner-Coliseum-Day-Small-22x16.jpg[/img][/url]
+[url=https://ibb.co/WcxKM9g][img]https://i.ibb.co/qRy1cGk/Haunted-Marsh-26x18.jpg[/img][/url]
+[url=https://ibb.co/7YCTjgy][img]https://i.ibb.co/0D2WmBJ/Hillside-Altar-26x18.jpg[/img][/url]
+[url=https://ibb.co/xCY248P][img]https://i.ibb.co/r73QWfT/Hillside-Cave-26x19.jpg[/img][/url]
+[url=https://ibb.co/DMJzKby][img]https://i.ibb.co/6tMrsZx/Jungle-River-Crossing-Lily-Field-Day-23x16.jpg[/img][/url]
+[url=https://ibb.co/gd5qtgH][img]https://i.ibb.co/9hFKyYz/Jungle-River-Crossing-Lily-Field-Night-23x16.jpg[/img][/url]
+[url=https://ibb.co/8D9L3XH][img]https://i.ibb.co/7JKdcbq/Lakebed-Monolith-26x18.jpg[/img][/url]
+[url=https://ibb.co/sjRX6Hm][img]https://i.ibb.co/LSRsJ5k/Ocean-calm-16x16.jpg[/img][/url]
+[url=https://ibb.co/k6k5Y3G][img]https://i.ibb.co/Z1tGyHf/Ocean-nighttime-16x16.jpg[/img][/url]
+[url=https://ibb.co/L9R6wjS][img]https://i.ibb.co/6Dwbh9Y/Ocean-rough-16x16.jpg[/img][/url]
+[url=https://ibb.co/fGGDFNG][img]https://i.ibb.co/7NNkCpN/Ocean-storm-16x16.jpg[/img][/url]
+[url=https://ibb.co/FhGjdRg][img]https://i.ibb.co/nwh5Kxz/Ocean-tropical-16x16.jpg[/img][/url]
+[url=https://ibb.co/qrwWPwj][img]https://i.ibb.co/4VxY5xt/Pumpkin-Hill-26x18.jpg[/img][/url]
+[url=https://ibb.co/HY9r0Y2][img]https://i.ibb.co/J2SzN2d/Roadside-Rise-26x20.jpg[/img][/url]
+[url=https://ibb.co/m63dq69][img]https://i.ibb.co/qkvhskN/Shattered-Sky-Astral-Blue-Star-Background-22x16.jpg[/img][/url]
+[url=https://ibb.co/XjqfPCr][img]https://i.ibb.co/zQzWg4T/Shattered-Sky-Astral-Red-Star-Background-22x16.jpg[/img][/url]
+[url=https://ibb.co/VNQDkT0][img]https://i.ibb.co/7zRV0Kx/Shattered-Sky-Astral-Sea-Blue-Star-22x16.jpg[/img][/url]
+[url=https://ibb.co/TRjdMTM][img]https://i.ibb.co/mtZg5B5/Shattered-Sky-Astral-Sea-Red-Star-22x16.jpg[/img][/url]
+[url=https://ibb.co/qxwPXQD][img]https://i.ibb.co/mS7M1WR/Shifting-Swamp-Jungle-26x18.jpg[/img][/url]
+[url=https://ibb.co/y4Xd3yh][img]https://i.ibb.co/0scmwMB/Shifting-Swamp-26x18.jpg[/img][/url]
+[url=https://ibb.co/y859r1w][img]https://i.ibb.co/WcFhLwb/Silent-Snowy-Cemetery-26x18.jpg[/img][/url]
+[url=https://ibb.co/ZK0FL8J][img]https://i.ibb.co/NpMJVj3/Sinister-Woodland-Swamp-Day-Closed-31x23.jpg[/img][/url]
+[url=https://ibb.co/kHCZN9n][img]https://i.ibb.co/6nCQj1h/Sinister-Woodland-Swamp-Day-Open-31x23.jpg[/img][/url]
+[url=https://ibb.co/q5xG7m3][img]https://i.ibb.co/GTFwnC4/Sinister-Woodland-Swamp-Night-Closed-31x23.jpg[/img][/url]
+[url=https://ibb.co/bQgRFJW][img]https://i.ibb.co/4KZg2dm/Sinister-Woodland-Swamp-Night-Open-31x23.jpg[/img][/url]
+[url=https://ibb.co/y8mQLt2][img]https://i.ibb.co/JzWsXVZ/Winter-Wilderness-Lonely-Oak-Day-A-25x18.jpg[/img][/url]
+[url=https://ibb.co/FmZftmS][img]https://i.ibb.co/BcW7RcX/Winter-Wilderness-Lonely-Oak-Day-B-25x18.jpg[/img][/url]
+[url=https://ibb.co/3Nn9wyC][img]https://i.ibb.co/QN43ZFK/Winter-Wilderness-Lonely-Oak-Night-A-25x18.jpg[/img][/url]
+[url=https://ibb.co/PWNMF7m][img]https://i.ibb.co/4S72K6m/Winter-Wilderness-Lonely-Oak-Night-B-25x18.jpg[/img][/url]
+"""
+
+map_state = {"current_map": None, "size": None, "bg_image": None}
+map_base_url = get("otfbm_base_url", "http://otfbm.io/")
+mapsize = get("mapSize", "20x20")
+out = {}
+alph = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+
+occupied_positions = set()
+
+def map(func, iterable):
+    return [func(item) for item in iterable]
+
+def bubble_sort(arr):
+    n = len(arr)
+    for i in range(n):
+        for j in range(0, n-i-1):
+            if arr[j] > arr[j+1]:
+                arr[j], arr[j+1] = arr[j+1], arr[j]
+    return arr
+
+def sorted(iterable, key=None, reverse=False):
+    # Convert iterable to a list
+    list_to_sort = list(iterable)
+    
+    # Define a default key function if none is provided
+    if key is None:
+        key = lambda x: x
+    
+    # Bubble sort implementation
+    n = len(list_to_sort)
+    for i in range(n):
+        for j in range(0, n - i - 1):
+            if (key(list_to_sort[j]) > key(list_to_sort[j + 1])) ^ reverse:
+                list_to_sort[j], list_to_sort[j + 1] = list_to_sort[j + 1], list_to_sort[j]
+    
+    return list_to_sort
+
+def zip(*iterables):
+    # Get the length of the shortest iterable
+    min_length = min(len(iterable) for iterable in iterables)
+    
+    # Create a list of tuples
+    return [
+        tuple(iterable[i] for iterable in iterables)
+        for i in range(min_length)
+    ]
+
+def extract_map_info(bbcode):
+    lines = bbcode.split('\n')
+    map_dict = {}
+    for line in lines:
+        if line.startswith('[url=') and line.endswith('[/url]'):
+            url_start = line.find('https://i.ibb.co/')
+            url_end = line.find('[/img]')
+            if url_start != -1 and url_end != -1:
+                url = line[url_start:url_end]
+                name = url.split('/')[-1].split('.')[0]
+                map_name = clean_map_name(name)
+                size = get_size_from_name(name)
+                
+                # Ensure size is in the correct format
+                if 'x' not in size or not all(part.isdigit() for part in size.split('x')):
+                    size = "25x17"  # Use a default size if the extracted size is invalid
+                
+                cell_pixel = get_cell_pixel(size, map_name)
+                
+                map_dict[map_name] = {
+                    "cell_pixel": cell_pixel,
+                    "size": size,
+                    "image": url
+                }
+    return map_dict
+
+def clean_map_name(name):
+    # Remove file extension and resolution
+    name = name.split('.')[0]
+    name_parts = name.split('-')
+    clean_parts = []
+    
+    for part in name_parts:
+        if 'x' not in part:  # Skip the resolution part
+            clean_parts.append(part)
+    
+    # Capitalize words and join
+    return ' '.join(word.capitalize() for word in ' '.join(clean_parts).split())
+
+def get_size_from_name(name):
+    parts = name.split('-')
+    for part in parts:
+        if 'x' in part:
+            size_parts = part.split('x')
+            if len(size_parts) == 2 and all(s.isdigit() for s in size_parts):
+                return part
+    return "25x17"  # Default size if not found
+
+def get_cell_pixel(size, map_name):
+    try:
+        # Manual override
+        if map_name == 'Fighting Pit Muddy Light':
+            return 'c40'
+
+        width, height = map(int, size.split('x'))
+        target_width, target_height = 600, 600
+        
+        # Calculate cell sizes based on both width and height, rounding up
+        cell_size_w = -(-target_width // width)  # Ceiling division
+        cell_size_h = -(-target_height // height)  # Ceiling division
+        
+        # Use the smaller cell size to ensure the entire map fits
+        cell_size = min(cell_size_w, cell_size_h)
+        
+        # Ensure the cell size is at least 10 pixels
+        cell_size = max(cell_size, 10)
+        
+        return f"c{cell_size}"
+    except ValueError:
+        return "c40"  # Default in case of unexpected size format
+
+def initialize_map(map_name):
+    if map_name in map_presets:
+        map_state["current_map"] = map_name
+        map_state["size"] = map_presets[map_name]["size"]
+        map_state["mapoptions"] = map_presets[map_name]["cell_pixel"]
+        map_state["bg_image"] = map_presets[map_name]["image"]
+        return map_state["size"], map_state["bg_image"], map_state["mapoptions"]
+    return None, None, None
+
+def parse_mapsize(size_str):
+    if size_str is None:
+        return [20, 20]  # Default size
+    try:
+        width, height = map(int, size_str.split('x'))
+        return [max(1, width), max(1, height)]  # Ensure minimum size of 1x1
+    except ValueError:
+        return [20, 20]
+
+def parse_map_info(raw_info):
+    map_data = {}
+    if raw_info:
+        for item in raw_info.split(' ~ '):
+            parts = item.split(': ', 1)
+            if len(parts) == 2:
+                map_data[parts[0].lower()] = parts[1]
+    return map_data
+
+def place_combatants(combatants, is_monster):
+    width, height = parse_mapsize(map_state.get("size"))
+    
+    if is_monster:
+        x_range = range(width // 2 + 1, width + 1)
+    else:
+        x_range = range(1, width // 2 + 1)
+    
+    y_range = range(1, height + 1)
+    for combatant in combatants:
+        if typeof(combatant) == "SimpleGroup":
+            place_combatants(combatant.combatants, is_monster)
+        elif combatant.name.lower() not in ['dm', 'map', 'lair']:
+            out[combatant.name] = out.get(combatant.name, {})
+            
+            # Mapping size categories to size letters and grid sizes
+            size_map = {
+                'Tiny': ('T', 1),
+                'Small': ('S', 1),
+                'Medium': ('M', 1),
+                'Large': ('L', 2),
+                'Huge': ('H', 3),
+                'Gargantuan': ('G', 4)
+            }
+            
+            # Fetch the monster's size from the custom database
+            if combatant.monster_name:
+                mon_size = get_monster_data(combatant.monster_name, 'meta')
+                if mon_size:
+                    mon_size = mon_size.split()[0]
+                else:
+                    mon_size = 'Medium'
+            else:
+                # Default to 'Medium' size for player characters
+                mon_size = 'Medium'
+            
+            # Get size letter and grid size
+            size_info = size_map.get(mon_size, ('M', 1))
+            size_letter, mon_size_grid = size_info
+            
+            position_found = False
+            attempts = 0
+            max_attempts = 100  # To prevent infinite loops
+            while not position_found and attempts < max_attempts:
+                x = randchoice(x_range)
+                y = randchoice(y_range)
+                position_clear = True
+                for dx in range(mon_size_grid):
+                    for dy in range(mon_size_grid):
+                        pos = (x + dx, y + dy)
+                        if pos in occupied_positions or x + dx > width or y + dy > height:
+                            position_clear = False
+                            break
+                    if not position_clear:
+                        break
+                if position_clear:
+                    for dx in range(mon_size_grid):
+                        for dy in range(mon_size_grid):
+                            occupied_positions.add((x + dx, y + dy))
+                    
+                    # Add safeguard for x value
+                    x = max(1, min(x, len(alph)))
+                    location = f"{alph[x-1]}{y}"
+                    
+                    out[combatant.name]['location'] = location
+                    position_found = True
+                attempts += 1
+            if not position_found:
+                err(f"Could not place {combatant.name} on the map without overlapping.")
+            
+            # Set size letter
+            out[combatant.name]['size'] = size_letter
+            
+            # Set color
+            out[combatant.name]['color'] = 'r' if is_monster else 'g'
+            
+            # Add note to the combatant without Tokensize
+            note = (f"Location: {location} | Color: {out[combatant.name]['color']} | "
+                    f"Size: {size_letter} ({mon_size})")
+            combatant.set_note(note)
+            map_state["combatants"] = map_state.get("combatants", {})
+            map_state["combatants"].update(out)
+
+def generate_map_image(overlays=None):
+    map_url = f"{get('otfbm_base_url', 'http://otfbm.io/')}"
+    
+    # Get the latest map info from the map combatant
+    map_info, _ = get_map_info()
+    
+    # Use the stored map options or defaults
+    cell_size = map_info.get('options', get('mapOptions', ''))
+    if cell_size:
+        map_url += f"@{cell_size}/"
+    
+    # Use the stored map size or default
+    mapsize = map_info.get('size', get('mapSize', '10x10'))
+    map_url += f"{mapsize}"
+    
+    # Add combatants
+    combatant_str = ""
+    for combatant in combat().combatants:
+        if combatant.name.lower() not in ['map', 'dm', 'lair']:
+            note = parse_note(combatant.note)
+            location = note.get('location')
+            if location:
+                size = note.get('size', 'M')
+                size_letter = size[0].upper()  # Ensure size letter is uppercase
+                # Get grid size for token from size map
+                size_map = {
+                    'T': 1,
+                    'S': 1,
+                    'M': 1,
+                    'L': 2,
+                    'H': 3,
+                    'G': 4
+                }
+                grid_size = size_map.get(size_letter, 1)
+                
+                color = note.get('color', 'b' if '/' in combatant.hp_str() else 'r')
+                if len(color) in (3, 6) and color.isalnum():
+                    color = f"~{color.upper()}"
+                else:
+                    color = color[0]
+                name = combatant.name.replace(' ', '_')
+                
+                # Build the combatant string for the map URL
+                combatant_str += f"/{location}{size_letter}{color}"
+                combatant_str += f"-{name}"
+    if combatant_str:
+        map_url += combatant_str
+    
+    # Add overlays
+    if overlays:
+        # Ensure overlays are prefixed with '*'
+        processed_overlays = [f"*{overlay.lstrip('*')}" for overlay in overlays]
+        # Join overlays with '/'
+        overlays_str = '/'.join(processed_overlays)
+        # Add overlays to the map URL
+        map_url += f"/{overlays_str}"
+    
+    # Add walls
+    walls = map_info.get('walls', '').split(', ') if map_info.get('walls') else []
+    walls_str = "_".join(walls)
+    if walls_str:
+        map_url += f"_{walls_str}/"
+    
+    # Add objects
+    objects = map_info.get('objects', '').split('/') if map_info.get('objects') else []
+    if objects:
+        map_url += "/".join(objects) + "/"
+    
+    # Add fog of war
+    fow = map_info.get('fow', '').split(', ') if map_info.get('fow') else []
+    if fow:
+        map_url += "*f" + "/*f".join(fow).replace(":", "") + "/"
+    
+    # Add background
+    bg_image = map_info.get('background', get('mapBg', ''))
+    if bg_image:
+        map_url += f"?bg={bg_image.split('?')[0]}"
+    
+    # Add JSON data
+    loadedjson = map_info.get('json', '').split(', ') if map_info.get('json') else []
+    if loadedjson:
+        map_url += f"{'&' if '?' in map_url else '?'}load={'&load='.join(loadedjson)}"
+    
+    return map_url
+
+def parse_note(note):
+    if not note:
+        return {}
+    return {item.split(':')[0].lower().strip(): item.split(':')[1].strip() 
+            for item in note.split('|') if ':' in item}
+
+def get_map_info():
+    for combatant in combat().combatants:
+        for attack in combatant.attacks:
+            if attack.name == 'map':
+                raw_info = attack.raw.automation[-1].text
+                map_info = {}
+                if raw_info:
+                    for item in raw_info.split(' ~ '):
+                        parts = item.split(': ', 1)
+                        if len(parts) == 2:
+                            map_info[parts[0].lower()] = parts[1]
+                return map_info, combatant
+    return {}, None
+
+def update_combatant_note(combatant, **kwargs):
+    note = parse_note(combatant.note)
+    note.update(kwargs)
+    new_note = ' | '.join(f"{k.title()}: {v.strip()}" for k, v in note.items())
+    combatant.set_note(new_note)
+
+def attach_map_to_combatant(map_state):
+    map_info, map_combatant = get_map_info()
+    
+    if not map_combatant:
+        map_combatant = mapPresent()
+    
+    if not map_combatant:
+        missing_map_warning = f'Map init object missing!\n\nPlease add a map object to combat using:\n`{pref}i add 0 DM -p 20`'
+        return False, missing_map_warning
+    
+    # Update map_info with new state
+    map_info.update(map_state)
+    
+    # Format map information
+    info_str = " ~ ".join(f"{k.capitalize()}: {v}" for k, v in map_info.items() if v)
+    
+    # Create or update the effect
+    map_combatant.add_effect('map', attacks=[{"attack":{"name":"map","automation":[{"type":"text","text":info_str}],"_v":2}}])
+    
+    return True, f"Map information attached to {map_combatant.name}"
+
+def calculate_distance(loc1, loc2):
+    x1, y1 = alph.index(loc1[0].upper()), int(loc1[1:])
+    x2, y2 = alph.index(loc2[0].upper()), int(loc2[1:])
+    dx = abs(x1 - x2)
+    dy = abs(y1 - y2)
+    distance = sqrt(dx**2 + dy**2) * 5  # Using 5ft grid
+    return distance
+
+def find_best_target(monster, target_names, max_surrounding=2):
+    if monster.stats.intelligence < 10:
+        return target_names[randint(len(target_names))]
+    
+    targets = [c.get_combatant(name) for name in target_names if c.get_combatant(name)]
+    target_hp = [(t, t.hp) for t in targets if t.hp is not None and t.hp > 0]
+    
+    if not target_hp:
+        return target_names[randint(len(target_names))]
+    
+    def count_surrounding_monsters(target):
+        target_location = get_combatant_location(target)
+        if not target_location:
+            return 0, False
+        surrounding_cells = get_surrounding_positions(target_location)
+        monster_count = 0
+        large_monster_present = False
+        for cell in surrounding_cells:
+            monster = get_monster_at_location(cell, c)
+            if monster:
+                monster_count += 1
+                if is_large_monster(monster):
+                    large_monster_present = True
+        return monster_count, large_monster_present
+    
+    def get_combatant_location(combatant):
+        if combatant.note:
+            note_parts = combatant.note.split('|')
+            for part in note_parts:
+                if part.strip().lower().startswith('location:'):
+                    return part.split(':')[1].strip()
+        return None
+    
+    def get_monster_at_location(cell, combat):
+        for combatant in combat.combatants:
+            if autolib.isMonster(combatant) and get_combatant_location(combatant) == cell:
+                return combatant
+        return None
+    
+    def is_large_monster(monster):
+        if monster.note:
+            note_parts = monster.note.split('|')
+            for part in note_parts:
+                if part.strip().lower().startswith('size:'):
+                    size = part.split(':')[1].strip().lower()
+                    return size in ['l', 'h', 'g', 'large', 'huge', 'gargantuan']
+        return False
+    
+    # Sort targets by HP and intelligence level
+    if monster.stats.intelligence >= 17:
+        sorted_targets = sorted(target_hp, key=lambda x: x[1])
+    else:
+        # Weighted random selection favoring lower HP targets
+        weights = [max(1, 100 - t[1]) for t in target_hp]
+        sorted_targets = [t for t, _ in sorted(zip(target_hp, weights), key=lambda x: x[1], reverse=True)]
+    
+    for target, _ in sorted_targets:
+        monster_count, large_monster_present = count_surrounding_monsters(target)
+        if monster_count < max_surrounding and not large_monster_present:
+            return target.name
+    
+    # If all preferred targets are surrounded or near large monsters, choose the least surrounded one without a large monster
+    valid_targets = [t for t in sorted_targets if not count_surrounding_monsters(t[0])[1]]
+    if valid_targets:
+        return min(valid_targets, key=lambda x: count_surrounding_monsters(x[0])[0])[0].name
+    
+    # If all targets have large monsters nearby, choose a random target from the valid ones (those with HP > 0)
+    return randchoice([t.name for t, _ in target_hp]) if target_hp else None
+
+
+def find_best_aoe_position(spell, caster_loc, targets):
+    # Implementation TBD
+    return None
+
+def move_towards(start, end, distance, occupied_positions):
+    start_x_letter = ''.join(filter(str.isalpha, start)).upper()
+    start_y_num = int(''.join(filter(str.isdigit, start)))
+    start_x_index = alph.index(start_x_letter)
+    
+    end_x_letter = ''.join(filter(str.isalpha, end)).upper()
+    end_y_num = int(''.join(filter(str.isdigit, end)))
+    end_x_index = alph.index(end_x_letter)
+    
+    dx = end_x_index - start_x_index
+    dy = end_y_num - start_y_num
+    
+    if dx == 0 and dy == 0:
+        return start, ""
+    
+    total_distance = sqrt(dx**2 + dy**2) * 5
+    ratio = min(distance / total_distance, 1) if total_distance > 0 else 0
+    move_x = start_x_index + dx * ratio
+    move_y = start_y_num + dy * ratio
+    
+    new_x_index = int(round(move_x))
+    new_y_num = int(round(move_y))
+    
+    new_x_index = max(0, min(len(alph) - 1, new_x_index))
+    new_y_num = max(1, min(20, new_y_num))
+    
+    new_location = f"{alph[new_x_index]}{new_y_num}"
+    
+    # Check if the new location is occupied
+    if new_location in occupied_positions:
+        new_location = find_nearest_unoccupied_position(start, end, occupied_positions)
+    
+    # Calculate actual movement for the arrow
+    new_x_index = alph.index(new_location[0])
+    new_y_num = int(new_location[1:])
+    deltaX = new_x_index - start_x_index
+    deltaY = new_y_num - start_y_num
+    distanceT = int(round(sqrt(deltaX**2 + deltaY**2), 0)) * 5
+    
+    # Use red color for the arrow
+    colr = 'r'
+    
+    # Generate arrow overlay with correct syntax
+    arrow = f"*a{distanceT}{colr}{start_x_letter}{start_y_num}{alph[new_x_index]}{new_y_num}"
+    
+    return new_location, arrow
+
+def create_arrow_overlay(start_location, end_location):
+    start_x_letter = ''.join(filter(str.isalpha, start_location)).upper()
+    start_y_num = int(''.join(filter(str.isdigit, start_location)))
+    start_x_index = alph.index(start_x_letter)
+    
+    end_x_letter = ''.join(filter(str.isalpha, end_location)).upper()
+    end_y_num = int(''.join(filter(str.isdigit, end_location)))
+    end_x_index = alph.index(end_x_letter)
+    
+    deltaX = end_x_index - start_x_index
+    deltaY = end_y_num - start_y_num
+    distanceT = int(round(sqrt(deltaX**2 + deltaY**2), 0)) * 5  # Assuming 5ft per grid
+    
+    # Use red color for the arrow
+    colr = 'r'
+    
+    # Generate arrow overlay with correct syntax
+    arrow = f"*a{distanceT}{colr}{start_x_letter}{start_y_num}{end_x_letter}{end_y_num}"
+    
+    return arrow
+
+def update_monster_position(monster, new_location):
+    # Parse the current note
+    note_data = parse_note(monster.note)
+    old_location = note_data.get('location', None)
+    size_letter = note_data.get('size', 'M')
+    size_map = {'T': 1, 'S': 1, 'M': 1, 'L': 2, 'H': 3, 'G': 4}
+    mon_size_grid = size_map.get(size_letter.upper(), 1)
+
+    # Remove old positions from occupied_positions
+    if old_location:
+        old_positions = get_occupied_positions(old_location, mon_size_grid)
+        occupied_positions.difference_update(old_positions)
+
+    # Update the location
+    note_data['location'] = new_location
+
+    # Use the update_combatant_note function to set the new note
+    update_combatant_note(monster, **note_data)
+
+    # Update the out dictionary
+    out[monster.name] = out.get(monster.name, {})
+    out[monster.name]['location'] = new_location
+
+    # Add new positions to occupied_positions
+    new_positions = get_occupied_positions(new_location, mon_size_grid)
+    occupied_positions.update(new_positions)
+
+def get_occupied_positions(location, size_grid):
+    """
+    Given a location (e.g., 'E5') and size in grid cells, return a set of occupied positions.
+    """
+    x_letter = ''.join(filter(str.isalpha, location)).upper()
+    y_num = int(''.join(filter(str.isdigit, location)))
+    x_index = alph.index(x_letter)
+
+    positions = set()
+    for dx in range(size_grid):
+        for dy in range(size_grid):
+            x = x_index + dx
+            y = y_num + dy
+            positions.add((x, y))
+    return positions
+
+def find_unoccupied_positions_near_target(target_location, monster_size_grid, occupied_positions, map_width, map_height):
+    # Get positions occupied by target
+    target_size_grid = 1  # Assume target is size 1 for now
+    target_positions = get_occupied_positions(target_location, target_size_grid)
+
+    # Get all adjacent positions to the target's occupied positions
+    adjacent_positions = set()
+    for pos in target_positions:
+        x, y = pos
+        for dx in range(-monster_size_grid, monster_size_grid + 1):
+            for dy in range(-monster_size_grid, monster_size_grid + 1):
+                if dx == 0 and dy == 0:
+                    continue
+                adj_x = x + dx
+                adj_y = y + dy
+                # Check bounds
+                if 0 <= adj_x < len(alph) and 1 <= adj_y <= map_height:
+                    adjacent_positions.add((adj_x, adj_y))
+
+    # Now, for each adjacent position, check if the monster can occupy it
+    available_positions = []
+    for pos in adjacent_positions:
+        x, y = pos
+        # Check if monster can occupy positions from (x, y) to (x + size - 1, y + size - 1)
+        can_occupy = True
+        for dx in range(monster_size_grid):
+            for dy in range(monster_size_grid):
+                check_pos = (x + dx, y + dy)
+                if check_pos in occupied_positions:
+                    can_occupy = False
+                    break
+                # Check bounds
+                if check_pos[0] >= len(alph) or check_pos[1] > map_height:
+                    can_occupy = False
+                    break
+            if not can_occupy:
+                break
+        if can_occupy:
+            available_positions.append((x, y))
+    return available_positions
+
+def choose_closest_position_coords(monster_location, positions):
+    x_letter = ''.join(filter(str.isalpha, monster_location)).upper()
+    y_num = int(''.join(filter(str.isdigit, monster_location)))
+    x_index = alph.index(x_letter)
+    monster_coords = (x_index, y_num)
+
+    # Calculate distances to each position
+    distances = []
+    for pos in positions:
+        x, y = pos
+        dx = x - x_index
+        dy = y - y_num
+        distance = sqrt(dx**2 + dy**2)
+        distances.append((distance, pos))
+
+    # Sort positions by distance
+    distances.sort()
+    # Return the position with the smallest distance
+    return distances[0][1] if distances else None
+
+def get_monster_speed(monster_name):
+    speed_data = get_monster_data(monster_name, 'Speed')
+    if speed_data:
+        # Extract digits from the speed data
+        speed_digits = ''
+        for char in speed_data:
+            if char.isdigit():
+                speed_digits += char
+        if speed_digits:
+            return int(speed_digits)
+    return 30  # Default speed if not found
+
+def get_monster_data(monster_name, data_needed):
+    if not monster_name:
+        return None
+    db1 = '21934e43-b1aa-49b5-b252-68c0d78ed04c'
+    db2 = '24a1ea26-3c5b-4c2c-b528-113b857f9d34'
+    db3 = '9ca349e9-96f9-499d-8a2b-1359a5b989ba'
+    db4 = '48d73cd1-0224-4d8c-b723-d4a6bb4b2bf8'
+    db5 = '506d5812-54b6-47d8-aa48-03b0d9436999'
+    db6 = '710387e2-6c16-4b8f-9e04-65efa22a47b0'
+    db7 = 'f638dc80-082c-4aeb-aa03-6c8801ad9449'
+    db = [db1,db2,db3,db4,db5,db6,db7]
+    for gvar_str in db:
+        db = load_json(get_gvar(gvar_str))
+        for mon_datum in db:
+            if monster_name.casefold() == mon_datum["name"].casefold():
+                obtained_monster_data = mon_datum[data_needed]
+                return obtained_monster_data
+    return False
+
+def mapPresent():
+    map_combatant = None
+    for name in ("map", "dm", "lair"):
+        map_combatant = c.get_combatant(name)
+        if map_combatant:
+            break
+    return map_combatant
+
+def filter(func, iterable):
+    return [item for item in iterable if func(item)]
+
+def reversed(sequence):
+    result = []
+    for i in range(len(sequence) - 1, -1, -1):
+        result.append(sequence[i])
+    return result
+
+def get_surrounding_positions(center):
+    x = alph.index(''.join(filter(str.isalpha, center)).upper())
+    y = int(''.join(filter(str.isdigit, center)))
+    surrounding = [
+        (x-1, y-1), (x, y-1), (x+1, y-1),
+        (x-1, y),             (x+1, y),
+        (x-1, y+1), (x, y+1), (x+1, y+1)
+    ]
+    return [f"{alph[pos[0]]}{pos[1]}" for pos in surrounding if 0 <= pos[0] < len(alph) and 1 <= pos[1] <= 20]
+
+def find_nearest_unoccupied_position(start, end, occupied_positions):
+    end_surrounding = get_surrounding_positions(end)
+    available_positions = [pos for pos in end_surrounding if pos not in occupied_positions]
+    
+    if not available_positions:
+        return start  # No available positions, stay at current position
+    
+    # Find the nearest available position
+    return min(available_positions, key=lambda pos: calculate_distance(start, pos))
+
+def get_attack_reach(attack_str):
+    attack_str = attack_str.lower()
+    if 'reach' in attack_str:
+        words = attack_str.split()
+        for i, word in enumerate(words):
+            if word == 'reach' and i + 1 < len(words):
+                reach = ''.join(filter(str.isdigit, words[i+1]))
+                if reach:
+                    return int(reach)
+    return 8  # Default melee reach
+
+def get_max_attack_reach(attacks):
+    max_reach = 8
+    for attack in attacks:
+        reach = get_attack_reach(str(attack))
+        if reach > max_reach:
+            max_reach = reach
+    return max_reach
+
+def get_spell_range(spell_name):
+    spell_data = load_json(get_gvar('00d6334d-af6c-46ac-b810-752465e0ad33'))
+    spell_name = spell_name.strip('"')  # Remove quotes if present
+    for spell in spell_data:
+        if spell['name'].lower() == spell_name.lower():
+            range_str = spell['range']
+            # Extract the numeric value from the range string
+            range_value = ''.join(filter(str.isdigit, range_str))
+            return int(range_value) if range_value else 30  # Default to 30 if no numeric value found
+    return 30  # Default range if spell not found
+
+def process_monster_turn(indexed_combatant, targets, c, out, overlays, desc, command_list):
+    monster = c.get_combatant(indexed_combatant)
+    if not monster:
+        desc.append(f"Could not find combatant: {indexed_combatant}")
+        return
+
+    monster_name = monster.monster_name
+    curr_hp = monster.hp
+
+    # Check if the monster is already dead at the start of its turn
+    if monster.hp <= 0:
+        remove_dead_monster(c, monster, out, desc)
+        map_url = generate_map_image(overlays)
+        command_list.append(f'{pref}embed -title "Skipping dead monster: {monster_name}" -desc "{monster_name} has been defeated and removed from the map. Its turn will be skipped." -image "{map_url}" -footer "{footer}"')
+        command_list.append(f'{pref}i n')  # Skip to next turn
+        return
+
+    # Get location from note
+    monster_location = None
+    if monster.note:
+        note_parts = monster.note.split('|')
+        for part in note_parts:
+            if part.strip().lower().startswith('location:'):
+                monster_location = part.split(':')[1].strip()
+                break
+
+    # Check if map is present
+    map_present = mapPresent()
+    if map_present and monster_location:
+        chosen_target = find_best_target(monster, targets)
+        target_combatant = c.get_combatant(chosen_target)
+        if not target_combatant:
+            desc.append(f"Could not find target: {chosen_target}")
+            return
+
+        target_location = None
+        if target_combatant.note:
+            note_parts = target_combatant.note.split('|')
+            for part in note_parts:
+                if part.strip().lower().startswith('location:'):
+                    target_location = part.split(':')[1].strip()
+                    break
+
+        if target_location:
+            distance = calculate_distance(monster_location, target_location)
+            monster_speed = get_monster_speed(monster_name)
+            max_attack_reach = get_max_attack_reach(monster.attacks)
+            
+            # Check if the monster is a spellcaster
+            spell_monst = monster.spellbook.caster_level
+
+            # Before moving, display the map
+            map_state["combatants"] = out
+            toggle_monster_color(monster, 'p')
+            map_url = generate_map_image(overlays)
+            command_list.append(f'{pref}embed -title "Monster Turn: {monster.name}" -desc "Monster is deciding its action..." -image "{map_url}" -footer "{footer}"')
+
+            occupied_positions = set(out[name].get('location') for name in out if 'location' in out[name])
+            
+            # Spellcasting logic
+            if spell_monst:
+                spell_data = load_json(get_gvar("a1e23cdf-0510-480d-a616-59e2c46780ac"))
+                spell_list = [spell.name for spell in monster.spellbook.spells]
+                spell_viable = False
+                chosen_spell = None
+                chosen_spell_level = 0
+
+                # Create a list of viable spells
+                viable_spells = []
+                for spell in spell_list:
+                    if spell in spell_data:
+                        spell_level = spell_data[spell]
+                        if monster.spellbook.can_cast(spell, spell_level):
+                            viable_spells.append((spell, spell_level))
+
+                # If there are viable spells, choose one randomly
+                if viable_spells:
+                    chosen_spell, chosen_spell_level = randchoice(viable_spells)
+                    spell_viable = True
+
+                if spell_viable:
+                    # Check if the monster needs to move to cast the spell
+                    spell_range = get_spell_range(chosen_spell)
+                    ideal_distance = max(30, spell_range - 30)  # Stay 30 ft away from max range if possible
+                    
+                    if distance != ideal_distance:
+                        move_distance = min(monster_speed, abs(distance - ideal_distance))
+                        movement_direction = "towards" if distance > ideal_distance else "away from"
+                        new_location, arrow = move_towards(monster_location, target_location, move_distance, occupied_positions)
+                        update_monster_position(monster, new_location)
+                        occupied_positions.add(new_location)
+                        if arrow:
+                            overlays.append(arrow)
+                        monster_location = new_location
+                        desc.append(f"{indexed_combatant} moves {int(move_distance)} ft. {movement_direction} {chosen_target} for a better vantage point.")
+                        
+                        # After movement, display the updated map
+                        map_state["combatants"] = out
+                        map_url = generate_map_image(overlays)
+                        command_list.append(f'{pref}embed -title "Monster Movement: {monster.name}" -desc "{desc[-1]}" -image "{map_url}" -footer "{footer}"')
+                    else:
+                        desc.append(f"{indexed_combatant} holds position, already at an ideal vantage point.")
+                    
+                    # Cast the spell
+                    command_list.append(f'{pref}i cast "{chosen_spell}" -t {chosen_target} -l {chosen_spell_level} -phrase ":robot: _Triggered by auto monster AI_"')
+                    desc.append(f"{indexed_combatant} casts {chosen_spell} at {chosen_target}.")
+                    command_list.append(f'{pref}i n')
+                    return
+
+            # Melee combat logic (if not a spellcaster or out of spell slots)
+            if distance > max_attack_reach:
+                move_distance = min(monster_speed, distance - max_attack_reach)
+                if move_distance < distance - max_attack_reach:
+                    # Monster needs to dash
+                    move_distance = min(monster_speed * 2, distance - max_attack_reach)
+                    new_location, arrow = move_towards(monster_location, target_location, move_distance, occupied_positions)
+                    update_monster_position(monster, new_location)
+                    occupied_positions.add(new_location)
+                    if arrow:
+                        overlays.append(arrow)
+                    monster_location = new_location
+                    desc.append(f"{indexed_combatant} dashes {int(move_distance)} ft. towards {chosen_target}.")
+                    map_state["combatants"] = out
+                    map_url = generate_map_image(overlays)
+                    command_list.append(f'{pref}embed -title "Monster Dashes: {monster.name}" -desc "{desc[-1]}" -image "{map_url}" -footer "{footer}"')
+                    command_list.append(f'{pref}i n')
+                    return
+                else:
+                    new_location, arrow = move_towards(monster_location, target_location, move_distance, occupied_positions)
+                    update_monster_position(monster, new_location)
+                    occupied_positions.add(new_location)
+                    if arrow:
+                        overlays.append(arrow)
+                    monster_location = new_location
+                    distance = calculate_distance(monster_location, target_location)
+                    desc.append(f"{indexed_combatant} moves {int(move_distance)} ft. towards {chosen_target}.")
+            else:
+                desc.append(f"{indexed_combatant} holds position to attack {chosen_target}.")
+
+            # After movement, display the updated map
+            map_state["combatants"] = out
+            map_url = generate_map_image(overlays)
+            command_list.append(f'{pref}embed -title "Monster Movement: {monster.name}" -desc "{desc[-1]}" -image "{map_url}" -footer "{footer}"')
+
+        else:
+            desc.append(f"Could not find location for target: {chosen_target}")
+
+    else:
+        chosen_target = targets[randint(len(targets))]
+        distance = 8  # Assume adjacent if no map
+        desc.append(f"{indexed_combatant} attacks {chosen_target}.")
+
+    # Attack logic
+    if distance <= get_max_attack_reach(monster.attacks) and (curr_hp > 0 or autolib.onDeath(indexed_combatant, c.combatants) == "relentless"):
+        # Multiattack logic
+        mon_actions = autolib.getActions(monster_name, autolib.buildDB())
+        multi_atks = autolib.getMultiAttacks(mon_actions)
+
+        if multi_atks:
+            for atk, num in multi_atks.items():
+                atkr = autolib.resolveVersatile(atk)
+                command_list.append(f'{pref}i a "{atkr}" -rr {num} autoc -t {chosen_target} -phrase ":robot: _Triggered by auto monster AI_ :crossed_swords: Multiattack :crossed_swords:"')
+            command_list.append(f'{pref}i n')
+        else:
+            chosen_atk_string = autolib.getAttack(indexed_combatant, c.combatants)
+            command_list.append(f'{pref}i a "{chosen_atk_string}" -t {chosen_target} autoc -phrase ":robot: _Triggered by auto monster AI_"')
+            command_list.append(f'{pref}i n')    
+    elif curr_hp <= 0:
+        on_death = autolib.onDeath(indexed_combatant, c.combatants)
+        if on_death:
+            target_string = f"-t {chosen_target}" if "death" in on_death else ""
+            command_list.append(f'{pref}i a "{on_death}" {target_string} -phrase ":robot: _Triggered by auto monster AI_"')
+        else:
+            desc.append(f"Skipping dead monster: {indexed_combatant}")
+            command_list.append(f'{pref}i n')
+    else:
+        desc.append(f"{indexed_combatant} couldn't reach {chosen_target} to attack.")
+        command_list.append(f'{pref}i n')
+
+    if monster.hp <= 0:
+        remove_dead_monster(c, monster, out, desc)
+        map_url = generate_map_image(overlays)
+        command_list.append(f'{pref}embed -title "Skipping dead monster: {monster_name}" -desc "{monster_name} has been defeated and removed from the map. Its turn will be skipped." -image "{map_url}" -footer "{footer}"')
+        return
+
+def remove_dead_monster(combat, monster, out, desc):
+    if monster.name in out:
+        out.pop(monster.name)
+    desc.append(f"{monster.name} has fallen and been removed from the map.")
+
+def toggle_monster_color(monster, new_color):
+    note_dict = parse_note(monster.note)
+    original_color = note_dict.get('color', 'r')
+    note_dict['color'] = new_color
+    new_note = ' | '.join(f"{k.title()}: {v}" for k, v in note_dict.items())
+    monster.set_note(new_note)
+    
+    if monster.name in out:
+        out[monster.name]['color'] = new_color
+    
+    return original_color
+
+def find_map_by_subtext(subtext):
+    subtext_lower = subtext.lower()
+    matches = []
+    for map_name in map_presets:
+        if subtext_lower in map_name.lower():
+            matches.append(map_name)
+    return matches
+
+def load_specific_map(map_subtext):
+    subtext_lower = map_subtext.lower()
+    matches = []
+    for map_name in map_presets:
+        if subtext_lower in map_name.lower():
+            matches.append(map_name)
+    
+    if not matches:
+        return False, f"No maps found matching '{map_subtext}'. Use `{cmd} map list` to see available maps."
+    
+    # Bubble sort matches by string length in ascending order
+    n = len(matches)
+    for i in range(n):
+        for j in range(0, n - i - 1):
+            if len(matches[j]) > len(matches[j + 1]):
+                matches[j], matches[j + 1] = matches[j + 1], matches[j]
+    
+    # Select the first match
+    map_name = matches[0]
+    map_data = map_presets[map_name]
+    
+    # Update map_state with new map data
+    map_state["current_map"] = map_name
+    map_state["size"] = map_data["size"]
+    map_state["mapoptions"] = map_data["cell_pixel"]
+    map_state["bg_image"] = map_data["image"]
+    
+    # Get the current map combatant
+    map_combatant = mapPresent()
+    
+    if not map_combatant:
+        return False, f"Map combatant not found. Please add a map combatant using `{pref}i add 0 Map -p 20`"
+    
+    # Update the map effect on the map combatant
+    neweffect = f"Size: {map_state['size']} ~ Background: {map_state['bg_image']} ~ Options: {map_state['mapoptions']}"
+    map_combatant.add_effect('map', attacks=[{"attack":{"name":"map","automation":[{"type":"text","text":neweffect}],"_v":2}}])
+    
+    # Attach the updated map to the combatant
+    place_combatants([c for c in combatants if autolib.isMonster(c) and c.name.lower() not in ['dm', 'map', 'lair']], True)
+    place_combatants([c for c in combatants if not autolib.isMonster(c) and c.name.lower() not in ['dm', 'map', 'lair']], False)
+    success, message = attach_map_to_combatant(map_state)
+    
+    if success:
+        base_message = f"`{map_name}` map loaded successfully. Combat positions assigned.\n\n**Map-Art Courtesy of**:\n[2-Minute Tabletop](https://2minutetabletop.com/) under the [CC BY-NC 4.0 License](https://creativecommons.org/licenses/by-nc/4.0/)"
+        if len(matches) > 1:
+            other_matches = nl.join(matches[1:])
+            base_message += f"\n\nYou may also be looking for: ```{other_matches}```"
+        return True, base_message
+    else:
+        return False, message
+
+def process_map_absentee_monster_turn(indexed_combatant, command_list):
+    title = f'New monster detected: {indexed_combatant}'
+    desc_text = f'This monster is not currently on the map, please place the monster\'s token on the map manually using: ```{pref}map -t {indexed_combatant}|C4```\nReplace `C4` to any location you like.'
+    command_list.append(f"""{pref}embed -title "{title}" -desc "{desc_text}" -footer '{footer}'""")
+    command_list.append(f'{pref}i n')
+
+# Initialize overlays and descriptions
+overlays = []
+desc = []
+map_presets = extract_map_info(bbcode)
+
+
+###### TEST SUITES ######
+
+
+
+
+###### TEST SUITES ######
+
+# Main code execution starts here
+if not (inp == 'help' or inp == '?'):
+    if c:
+
+        if inp1.lower() in 'map' and inp2.lower() in 'list':
+            # Generate the list of map options
+            map_list = []
+            for map_name, map_data in map_presets.items():
+                map_info = f"**{map_name}** ({map_data['size']})"
+                map_list.append(map_info)
+            
+            # Sort the list alphabetically using bubble sort
+            map_list = bubble_sort(map_list)
+            map_list.append(f'Usage Example: `{cmd} map \\\"Silent Snowy Cemetery\\\"\n(or)`{cmd} m sil`\n\n**Map-Art Courtesy of**:\n[2-Minute Tabletop](https://2minutetabletop.com/) under the [CC BY-NC 4.0 License](https://creativecommons.org/licenses/by-nc/4.0/)\nFeel free to check their other maps if you like this type of map art!')
+            
+            # Split the list into chunks of 20 maps each
+            chunk_size = 60
+            map_chunks = []
+            for i in range(0, len(map_list), chunk_size):
+                map_chunks.append(map_list[i:i+chunk_size])
+            
+            # Create embed for each chunk
+            for i, chunk in enumerate(map_chunks):
+                title = f"Available Map Presets (Page {i+1}/{len(map_chunks)})"
+                desc = "\n".join(chunk)
+                command_list.append(f'{pref}embed -title "{title}" -desc "{desc}" -footer "{footer}"')
+            
+            command += nl.join(command_list)
+            return command
+
+        if inp1.lower() in 'map':
+            map_subtext = inp2
+            success, message = load_specific_map(map_subtext)
+            if success:
+                # Generate the updated map image
+                map_url = generate_map_image()
+                command_list.append(f'{pref}embed -title "Map Updated" -desc "{message}" -image "{map_url}" -footer "{footer}"')
+            else:
+                command_list.append(f'{pref}embed -title "Map Update Failed" -desc "{message}" -footer "{footer}"')
+            
+            command += nl.join(command_list)
+            return command
+
+        for combatant in combatants:
+            cname_list.append(combatant.name)
+        targets = []
+        monst_list = []
+
+        for i in combatants:
+            if i.monster_name and i not in monst_list and autolib.isMonster(i):
+                monst_list.append(i.name)
+                monst_name_list.append(i.monster_name)
+
+        targets = [x for x in cname_list if x not in monst_list]
+        if targets:
+            for i in targets[:]:
+                if i.casefold() in ['map', 'dm', 'lair']:
+                    targets.remove(i)
+                elif autolib.isGhost(c, i):
+                    targets.remove(i)
+        if not targets:
+            err(f'No playable characters found within Combat Initiative to target!\n\nPlease join the combat initiative using `{pref}i join` or remove ghost effect from characters')
+
+        map_combatant = mapPresent()
+        map_initialized = False
+
+        if map_combatant:
+            for attack in map_combatant.attacks:
+                if attack.name == 'map':
+                    map_initialized = True
+                    break
+
+        # Check if map is present, if not, add it to the command list
+        if not map_combatant:
+            command_list.append(f'{pref}i add 0 Map -p 20')
+            command_list.append(f'{pref}embed -title "Map Attached" -desc "__**Suggested Actions**__:\n\nChoose from one of the many map presets:\n`{cmd} map list`\n\n### __Quick Setup Tips__\n**Small-size close-quarters map**:\n`{cmd} map pit`\n\n**Medium-size map**:\n`{cmd} map winter`\n`{cmd} map light`\n`{cmd} map silent`\n\n**Large-size Map**:\n`{cmd} map wood`\n\n**Load a random map preset:**\n`{cmd}`\n\n__Note__: Using any of the above quick setup commands will auto-magically add all players and monsters currently in the combat initiative to either end of the map.\n\n:warning: Make sure to add all the players and monsters to combat initiative before loading the map with one of the above commands for a seamless assignment of combat positions." -color <color> -footer "{footer}"')
+            command += nl.join(command_list)
+            return command
+        if not map_initialized:
+            # Randomly select a map preset
+            random_map_name, random_map_data = randchoice(list(map_presets.items()))
+            mapsize = random_map_data["size"]
+            mapbg = random_map_data["image"]
+            mapoptions = random_map_data["cell_pixel"]
+            walls = objects = mapviewlocation = mapviewsize = ''
+
+            map_combatant = mapPresent()
+
+            if not map_combatant:
+                missing_map_warning = f'Map init object missing!\n\nPlease add a map object to combat using:\n```{pref}i add 0 Map -p 20```'
+                return f"""embed -title "Map Missing!" -desc "{missing_map_warning}" -footer "{footer}" """
+
+            neweffect = f"Size: {mapsize} ~ Background: {mapbg} ~ Options: {mapoptions}"
+
+            # Update the map effect on the map combatant
+            map_combatant.add_effect('map', attacks=[{"attack":{"name":"map","automation":[{"type":"text","text":neweffect}],"_v":2}}])
+
+            # Update map_state with the new size
+            map_state["size"] = mapsize
+
+            place_combatants([c for c in combatants if autolib.isMonster(c) and c.name.lower() not in ['dm', 'map', 'lair']], True)
+            place_combatants([c for c in combatants if not autolib.isMonster(c) and c.name.lower() not in ['dm', 'map', 'lair']], False)
+            bool_result, map_status = attach_map_to_combatant(map_state)
+            if not bool_result:
+                return f"""embed -title "Map Missing!" -desc "{map_status}" -footer "{footer}" """
+            map_url = generate_map_image()
+            command_list.append(f'{pref}embed -title "Map Initialized: {random_map_name.title()}" -desc "Combat positions assigned.\n\n**Map-Art Courtesy of**:\n[2-Minute Tabletop](https://2minutetabletop.com/) under the [CC BY-NC 4.0 License](https://creativecommons.org/licenses/by-nc/4.0/)" -image "{map_url}" -footer "{footer}"')
+
+
+        if c.current:
+            current_init = c.current.name
+        else:
+            current_init = None
+
+        if current_init is None:
+            title = f'Booting up ancient artificial intelligences! :robot:'
+            if monst_list:
+                desc_text = f'\n:robot: _Auto-attack sequence initiated!_\n\nAutomating the following monsters:\n**{comma.join(monst_list)}**\n\n**Use `{cmd}` again now to automate all monsters in combat!**\n**Use `{cmd} once` or simply `{cmd} o` if monsters are grouped into groups.**'
+                command_list.append(f'{pref}i n')
+            else:
+                desc_text = f'_No monsters found in initiative!_\n\nThat\'s fine, feel free to add them any time and run `{cmd}` every time it\'s the monster\'s turn!'
+            if not map_combatant:
+                command_list.append(f'{pref}i add 0 Map -p 20')
+            command_list.append(f"""{pref}embed -title "{title}" -desc "{desc_text}" -footer '{footer}'""")
+            command += nl.join(command_list)
+            return command
+
+        if current_init in monst_list and not autolib.hasMonsterGroup(c):
+            indexed_cname_list = []
+            curr_combatant = c.current
+
+            # Build the indexed list starting from current initiative
+            # Sort the combatants by initiative (descending) and then by name
+            combatants_in_order = c.combatants
+            cname_list_sorted = [combatant.name for combatant in combatants_in_order]
+
+            indexed_cname_list = cname_list_sorted[cname_list_sorted.index(current_init):] + cname_list_sorted[:cname_list_sorted.index(current_init)]
+
+            if len(indexed_cname_list) > 4:
+                indexed_cname_list = indexed_cname_list[:4]
+
+            for indexed_combatant in indexed_cname_list:
+
+                if len(command_list) > 12:
+                    title = f'Whoa! You\'re pushing the limits of Avrae right now!'
+                    desc_text = f'Unfortunately, this is the maximum number of attacks you can automate to prevent unnecessarily over-stressing Avrae!\n\n**But no worries, you can simply use `{cmd}` again now to repeat the cycle!**'
+                    while len(command_list) > 12:
+                        command_list.reverse()
+                        last_n = command_list.index(f'{pref}i n')
+                        command_list = command_list[last_n+1:]
+                        command_list.reverse()
+                    command_list.append(f'{pref}i n')
+                    command_list.append(f"""{pref}embed -title "{title}" -desc "{desc_text}" -footer '{footer}'""")
+                    command += nl.join(command_list)
+                    return command
+                if indexed_combatant in monst_list:
+                    if 'Location' not in c.get_combatant(indexed_combatant).note:
+                        process_map_absentee_monster_turn(indexed_combatant, command_list)
+                    else:
+                        monster = c.get_combatant(indexed_combatant)
+                        process_monster_turn(indexed_combatant, targets, c, out, overlays, desc, command_list)
+                        toggle_monster_color(monster, 'r')
+                else:
+                    # Handle non-monster combatants
+                    if indexed_combatant.casefold() in ['map', 'dm', 'lair'] and c.get_combatant(indexed_combatant).init == 20:
+                        title = f'Automation Complete! Waiting on Lair Action :dragon:'
+                        desc_text = f'Use `{pref}i n` if there are no actions to take this round!'
+                    elif inp1.lower() in 'react':
+                        command_list.pop()
+                        title = f'Automation Complete! Pausing to allow player reaction! :mage:'
+                        desc_text = f'After taking any reaction use `{pref}i n`'
+                    else:
+                        title = f'Automation Complete! It\'s a player turn now! :mage:'
+                        desc_text = f'Waiting on **{indexed_combatant}** to play their turn!'
+                    command_list.append(f"""{pref}embed -title "{title}" -desc "{desc_text}" -footer '{footer}'""")
+                    break
+
+            # Update map_state["combatants"] with 'out'
+            map_state["combatants"] = out
+
+
+            if overlays:
+                map_url = generate_map_image(overlays)
+                map_embed = f'{pref}embed -title "Monster Movement Summary" -desc "Monster movements so far:" -image "{map_url}" -footer "{footer}"'
+                command_list.append(map_embed)
+
+            command += nl.join(command_list)
+            return command
+
+        else:
+            # It's a player's turn
+            if current_init.casefold() in ['map', 'dm', 'lair'] and c.turn_num == 20:
+                title = f'Waiting on Lair Action :dragon:'
+                desc_text = f'Use `{pref}i n` if there are no actions to take this round!'
+            else:
+                title = f'It\'s a player turn! :mage:'
+                desc_text = f'Waiting on **{current_init}** to play their turn!'
+            return f"""embed -title "{title}" -desc "{desc_text}" -footer "{footer}" """
+
+    elif inp in 'once':
+        if c:
+            # Implement the 'once' sub-command
+            if current_init in monst_list:
+                process_monster_turn(current_init, targets, c, out, overlays, desc, command_list)
+                # Update map_state["combatants"] with 'out'
+                map_state["combatants"] = out
+                if overlays:
+                    map_url = generate_map_image(overlays)
+                    map_embed = f'{pref}embed -title "Updated Map" -desc "Monster movements displayed" -image "{map_url}" -footer "{footer}"'
+                    command_list.append(map_embed)
+                command += nl.join(command_list)
+                return command
+            else:
+                # It's a player's turn
+                if current_init.casefold() in ['map', 'dm', 'lair'] and c.turn_num == 20:
+                    title = f'Waiting on Lair Action :dragon:'
+                    desc_text = f'Use `{pref}i n` if there are no actions to take this round!'
+                else:
+                    title = f'It\'s a player turn! :mage:'
+                    desc_text = f'Waiting on **{current_init}** to play their turn!'
+                return f"""embed -title "{title}" -desc "{desc_text}" -footer "{footer}" """
+        else:
+            title = 'You need to be within **combat initiative** in this channel to use this alias!'
+            desc_text = help_text
+
+elif inp in 'help?':
+    title = help_title
+    desc_text = help_text
+
+return (f'embed -title "{title}" -desc "{desc_text}" -footer "{footer}"')
+
+</drac2>
