@@ -32,6 +32,10 @@ help_text = f"""How to use `{cmd}`:
     - (ideally you can keep spamming `{cmd}` after adding all players and monsters to combat initiative)
 - Use `{cmd}` to automate all monsters until the next player in combat initiative
 
+*Note*: If you'd like to keep using the old alias without maps support, you can use:
+`{pref}autol`
+(`l` stands for legacy)
+
 This alias relies on the OTFBM backend service for map generation. They have server costs to cover, so please consider supporting their work through their [Patreon page](https://www.patreon.com/otfbm) if you're able
 
 You can also support the development of this alias on [Ko-fi](https://ko-fi.com/hedy4u)!
@@ -1059,7 +1063,7 @@ def load_specific_map(map_subtext):
     map_combatant = mapPresent()
     
     if not map_combatant:
-        return False, f"Map combatant not found. Please add a map combatant using `{pref}i add 0 Map -p 20`"
+        return False, f"Map combatant not found. You can manually add it using:\n`!i add 0 Map -p 20`\n\n**RECOMMENDED ACTION**:\nPlease type: ```{cmd}```\nto setup the map automatically before loading the map preset."
     
     # Update the map effect on the map combatant
     neweffect = f"Size: {map_state['size']} ~ Background: {map_state['bg_image']} ~ Options: {map_state['mapoptions']}"
@@ -1111,7 +1115,7 @@ if not (inp == 'help' or inp == '?'):
             
             # Sort the list alphabetically using bubble sort
             map_list = bubble_sort(map_list)
-            map_list.append(f'Usage Example: `{cmd} map \\\"Silent Snowy Cemetery\\\"\n(or)`{cmd} m sil`\n\n**Map-Art Courtesy of**:\n[2-Minute Tabletop](https://2minutetabletop.com/) under the [CC BY-NC 4.0 License](https://creativecommons.org/licenses/by-nc/4.0/)\nFeel free to check their other maps if you like this type of map art!')
+            map_list.append(f'\n__Usage Example__:\n`{cmd} map \\\"Silent Snowy Cemetery\\\"`\n(or)\n`{cmd} m sil`\n\n**Map-Art Courtesy of**:\n[2-Minute Tabletop](https://2minutetabletop.com/) under the [CC BY-NC 4.0 License](https://creativecommons.org/licenses/by-nc/4.0/)\nFeel free to check their other maps if you like this type of map art!')
             
             # Split the list into chunks of 20 maps each
             chunk_size = 60
@@ -1136,7 +1140,7 @@ if not (inp == 'help' or inp == '?'):
                 map_url = generate_map_image()
                 command_list.append(f'{pref}embed -title "Map Updated" -desc "{message}" -image "{map_url}" -footer "{footer}"')
             else:
-                command_list.append(f'{pref}embed -title "Map Update Failed" -desc "{message}" -footer "{footer}"')
+                command_list.append(f'{pref}embed -title "Map Setup Pending:" -desc "{message}" -footer "{footer}"')
             
             command += nl.join(command_list)
             return command
@@ -1173,7 +1177,7 @@ if not (inp == 'help' or inp == '?'):
         # Check if map is present, if not, add it to the command list
         if not map_combatant:
             command_list.append(f'{pref}i add 0 Map -p 20')
-            command_list.append(f'{pref}embed -title "Map Attached" -desc "__**Suggested Actions**__:\n\nChoose from one of the many map presets:\n`{cmd} map list`\n\n### __Quick Setup Tips__\n**Small-size close-quarters map**:\n`{cmd} map pit`\n\n**Medium-size map**:\n`{cmd} map winter`\n`{cmd} map light`\n`{cmd} map silent`\n\n**Large-size Map**:\n`{cmd} map wood`\n\n**Load a random map preset:**\n`{cmd}`\n\n__Note__: Using any of the above quick setup commands will auto-magically add all players and monsters currently in the combat initiative to either end of the map.\n\n:warning: Make sure to add all the players and monsters to combat initiative before loading the map with one of the above commands for a seamless assignment of combat positions." -color <color> -footer "{footer}"')
+            command_list.append(f'{pref}embed -title "Map Attached!" -desc "> *Note*: `{cmd}` now comes with a new update integrating OTFBM map-based combat with a full AI battle engine! If you\'d still like to use the old legacy version without maps support, worry not, it is still live on:\n> `{pref}autol`\n> (`l` stands for legacy)\n\n__**Suggested Actions**__:\n\nChoose from one of the many map presets:\n`{cmd} map list`\n\n### __Quick Setup Tips__\n**Small-size close-quarters map**:\n`{cmd} map pit`\n\n**Medium-size map**:\n`{cmd} map winter`\n`{cmd} map light`\n`{cmd} map silent`\n\n**Large-size Map**:\n`{cmd} map wood`\n\n**Load a random map preset:**\n`{cmd}`\n\n__Note__: Using any of the above quick setup commands will auto-magically add all players and monsters currently in the combat initiative to either end of the map.\n\n:warning: Make sure to add all the players and monsters to combat initiative before loading the map with one of the above commands for a seamless assignment of combat positions." -color <color> -footer "{footer}"')
             command += nl.join(command_list)
             return command
         if not map_initialized:
@@ -1215,7 +1219,7 @@ if not (inp == 'help' or inp == '?'):
         if current_init is None:
             title = f'Booting up ancient artificial intelligences! :robot:'
             if monst_list:
-                desc_text = f'\n:robot: _Auto-attack sequence initiated!_\n\nAutomating the following monsters:\n**{comma.join(monst_list)}**\n\n**Use `{cmd}` again now to automate all monsters in combat!**\n**Use `{cmd} once` or simply `{cmd} o` if monsters are grouped into groups.**'
+                desc_text = f'\n:robot: _Auto-attack sequence initiated!_\n\nAutomating the following monsters:\n**{comma.join(monst_list)}**\n\n**Use `{cmd}` again now to automate all monsters in combat!**'
                 command_list.append(f'{pref}i n')
             else:
                 desc_text = f'_No monsters found in initiative!_\n\nThat\'s fine, feel free to add them any time and run `{cmd}` every time it\'s the monster\'s turn!'
@@ -1296,7 +1300,28 @@ if not (inp == 'help' or inp == '?'):
                 desc_text = f'Use `{pref}i n` if there are no actions to take this round!'
             else:
                 title = f'It\'s a player turn! :mage:'
-                desc_text = f'Waiting on **{current_init}** to play their turn!'
+                if not get_uvar('mapStates'):
+                    desc_text = f"""
+Waiting on **{current_init}** to play their turn!
+
+To move your player character on the map:
+
+1. Ensure that you or the server you are in is subscribed to the `{pref}map` alias.
+    - You can quickly add it as a personal alias using:
+    ```
+    {pref}alias subscribe https://avrae.io/dashboard/workshop/5f6a4623f4c89c324d6a5cd3
+    ```
+
+2. Move your character using the `{pref}move` alias: (companion alias to `{pref}map`)
+    - For example:
+   ```
+   {pref}move C4
+   ```
+   (Replace "C4" with the cell address of your desired location on the map.)
+"""
+                else:
+                    desc_text = f"Waiting on **{current_init}** to play their turn!"
+
             return f"""embed -title "{title}" -desc "{desc_text}" -footer "{footer}" """
 
     elif inp in 'once':
