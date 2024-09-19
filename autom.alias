@@ -1254,10 +1254,12 @@ if not (inp == 'help' or inp == '?'):
                     command += nl.join(command_list)
                     return command
                 if indexed_combatant in monst_list:
-                    if 'Location' not in c.get_combatant(indexed_combatant).note:
+                    monster = c.get_combatant(indexed_combatant)    
+                    note = parse_note(monster.note)
+
+                    if not note or not 'location' in note:
                         process_map_absentee_monster_turn(indexed_combatant, command_list)
                     else:
-                        monster = c.get_combatant(indexed_combatant)
                         process_monster_turn(indexed_combatant, targets, c, out, overlays, desc, command_list)
                         toggle_monster_color(monster, 'r')
                 else:
