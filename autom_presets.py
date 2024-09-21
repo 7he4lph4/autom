@@ -58,6 +58,21 @@ bbcode = """
 
 def extract_map_info(bb=bbcode):
     map_dict = {}
+    custom_sizes = {
+        "Arena Of Earth Desert Day": "16x12",
+        "Arena Of Earth Desert Night": "16x12",
+        "Arena Of Earth Jade Day": "16x12",
+        "Arena Of Earth Jade Day Retracted Stairs Overlay": "16x16",
+        "Ocean Calm": "16x16",
+        "Ocean Nighttime": "16x16",
+        "Ocean Rough": "16x16",
+        "Ocean Storm": "16x16",
+        "Ocean Tropical": "16x16",
+        "Desert Crossroads Gridded Map Public": "16x10",
+        "Fighting Pit Muddy Dark": "16x9",
+        "Fighting Pit Muddy Light": "27x18",
+        "Roadside Rise": "16x12",
+    }
     for line in bbcode.split("\n"):
         if line == "":
             continue
@@ -65,34 +80,26 @@ def extract_map_info(bb=bbcode):
         bbp = "".join(url.split("/")[-1].split(".")[:-1]).split("-")
         sizes = [p for p in bbp if "x" in p and all(s.isdigit() for s in p.split("x"))]
         name = " ".join([p for p in bbp if p not in sizes]).title()
-        size = "25x17" if len(sizes) < 1 else sizes[0]
+        
+        # Use custom size if available, otherwise use size from URL or default
+        if name in custom_sizes:
+            size = custom_sizes[name]
+        elif len(sizes) >= 1:
+            url_width, url_height = core.map(int, sizes[0].split("x"))
+            if url_width < 16 or url_height < 11:
+                size = sizes[0]  # Use URL size if lesser than 16x11
+            else:
+                size = "16x11"  # Use standard size
+        else:
+            size = "16x11"  # Default size
+        
         cell_pixel = get_cell_pixel(size, name)
         map_dict[name] = {"cell_pixel": cell_pixel, "size": size, "image": url}
     return map_dict
 
 
 def get_cell_pixel(size, map_name):
-    try:
-        # Manual override
-        if map_name == "Fighting Pit Muddy Light":
-            return "c40"
-
-        width, height = core.map(int, size.split("x"))
-        target_width, target_height = 600, 600
-
-        # Calculate cell sizes based on both width and height, rounding up
-        cell_size_w = -(-target_width // width)  # Ceiling division
-        cell_size_h = -(-target_height // height)  # Ceiling division
-
-        # Use the smaller cell size to ensure the entire map fits
-        cell_size = min(cell_size_w, cell_size_h)
-
-        # Ensure the cell size is at least 10 pixels
-        cell_size = max(cell_size, 10)
-
-        return f"c{cell_size}"
-    except:
-        return "c40"  # Default in case of unexpected size format
+    return "c40"
 
 
 map_presets = extract_map_info()
