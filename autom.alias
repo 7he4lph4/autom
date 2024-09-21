@@ -17,7 +17,8 @@ inp3 = "&3&"
 using(
     autolib="ec14bc6e-81e4-4df7-86e9-5d64ed2fa9b7",
     core="49f5f503-1c00-4f24-ba43-92e65c2c2fb6",
-    presets = "c14e4526-4acb-4964-8ba9-f6861617ffdf"
+    presets = "c14e4526-4acb-4964-8ba9-f6861617ffdf",
+    mapl = "51af2e97-64e3-444a-994c-61c45c3f0994"
 )
 
 help_text = f"""How to use `{cmd}`:
@@ -65,26 +66,8 @@ alph = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
 occupied_positions = set()
 
-def parse_mapsize(size_str):
-    if size_str is None:
-        return [20, 20]  # Default size
-    try:
-        width, height = core.map(int, size_str.split('x'))
-        return [max(1, width), max(1, height)]  # Ensure minimum size of 1x1
-    except ValueError:
-        return [20, 20]
-
-def parse_map_info(raw_info):
-    map_data = {}
-    if raw_info:
-        for item in raw_info.split(' ~ '):
-            parts = item.split(': ', 1)
-            if len(parts) == 2:
-                map_data[parts[0].lower()] = parts[1]
-    return map_data
-
 def place_combatants(combatants, is_monster):
-    width, height = parse_mapsize(map_state.get("size"))
+    width, height = mapl.parse_mapsize(map_state.get("size"))
     
     if is_monster:
         x_range = range(width // 2 + 1, width + 1)
@@ -166,146 +149,6 @@ def place_combatants(combatants, is_monster):
             map_state["combatants"] = map_state.get("combatants", {})
             map_state["combatants"].update(out)
 
-def generate_map_image(overlays=None):
-    map_url = f"{get('otfbm_base_url', 'http://otfbm.io/')}"
-    
-    # Get the latest map info from the map combatant
-    map_info, _ = get_map_info()
-    
-    # Use the stored map options or defaults
-    cell_size = map_info.get('options', get('mapOptions', ''))
-    if cell_size:
-        map_url += f"@{cell_size}/"
-    
-    # Use the stored map size or default
-    mapsize = map_info.get('size', get('mapSize', '10x10'))
-    map_url += f"{mapsize}"
-    
-    # Add combatants
-    combatant_str = ""
-    for combatant in combat().combatants:
-        if combatant.name.lower() not in ['map', 'dm', 'lair']:
-            note = parse_note(combatant.note)
-            location = note.get('location')
-            if location:
-                size = note.get('size', 'M')
-                size_letter = size[0].upper()  # Ensure size letter is uppercase
-                # Get grid size for token from size map
-                size_map = {
-                    'T': 1,
-                    'S': 1,
-                    'M': 1,
-                    'L': 2,
-                    'H': 3,
-                    'G': 4
-                }
-                grid_size = size_map.get(size_letter, 1)
-                
-                color = note.get('color', 'b' if '/' in combatant.hp_str() else 'r')
-                if len(color) in (3, 6) and color.isalnum():
-                    color = f"~{color.upper()}"
-                else:
-                    color = color[0]
-                name = combatant.name.replace(' ', '_')
-                
-                # Build the combatant string for the map URL
-                combatant_str += f"/{location}{size_letter}{color}"
-                combatant_str += f"-{name}"
-    if combatant_str:
-        map_url += combatant_str
-    
-    # Add overlays
-    if overlays:
-        # Ensure overlays are prefixed with '*'
-        processed_overlays = [f"*{overlay.lstrip('*')}" for overlay in overlays]
-        # Join overlays with '/'
-        overlays_str = '/'.join(processed_overlays)
-        # Add overlays to the map URL
-        map_url += f"/{overlays_str}"
-    
-    # Add walls
-    walls = map_info.get('walls', '').split(', ') if map_info.get('walls') else []
-    walls_str = "_".join(walls)
-    if walls_str:
-        map_url += f"_{walls_str}/"
-    
-    # Add objects
-    objects = map_info.get('objects', '').split('/') if map_info.get('objects') else []
-    if objects:
-        map_url += "/".join(objects) + "/"
-    
-    # Add fog of war
-    fow = map_info.get('fow', '').split(', ') if map_info.get('fow') else []
-    if fow:
-        map_url += "*f" + "/*f".join(fow).replace(":", "") + "/"
-    
-    # Add background
-    bg_image = map_info.get('background', get('mapBg', ''))
-    if bg_image:
-        map_url += f"?bg={bg_image.split('?')[0]}"
-    
-    # Add JSON data
-    loadedjson = map_info.get('json', '').split(', ') if map_info.get('json') else []
-    if loadedjson:
-        map_url += f"{'&' if '?' in map_url else '?'}load={'&load='.join(loadedjson)}"
-    
-    return map_url
-
-def parse_note(note):
-    if not note:
-        return {}
-    return {item.split(':')[0].lower().strip(): item.split(':')[1].strip() 
-            for item in note.split('|') if ':' in item}
-
-def get_map_info():
-    for combatant in combat().combatants:
-        for attack in combatant.attacks:
-            if attack.name == 'map':
-                raw_info = attack.raw.automation[-1].text
-                map_info = {}
-                if raw_info:
-                    for item in raw_info.split(' ~ '):
-                        parts = item.split(': ', 1)
-                        if len(parts) == 2:
-                            map_info[parts[0].lower()] = parts[1]
-                return map_info, combatant
-    return {}, None
-
-def update_combatant_note(combatant, **kwargs):
-    note = parse_note(combatant.note)
-    note.update(kwargs)
-    new_note = ' | '.join(f"{k.title()}: {v.strip()}" for k, v in note.items())
-    combatant.set_note(new_note)
-
-def attach_map_to_combatant(map_state):
-    map_info, map_combatant = get_map_info()
-    
-    if not map_combatant:
-        map_combatant = mapPresent()
-    
-    if not map_combatant:
-        missing_map_warning = f'Map init object missing!\n\nPlease add a map object to combat using:\n`{pref}i add 0 DM -p 20`'
-        return False, missing_map_warning
-    
-    # Update map_info with new state
-    map_info.update(map_state)
-    
-    # Format map information
-    info_str = " ~ ".join(f"{k.capitalize()}: {v}" for k, v in map_info.items() if v)
-    
-    # Create or update the effect
-    map_combatant.add_effect('map', attacks=[{"attack":{"name":"map","automation":[{"type":"text","text":info_str}],"_v":2}}])
-    
-    return True, f"Map information attached to {map_combatant.name}"
-
-def calculate_distance(loc1, loc2):
-    x1, y1 = alph.index(loc1[0].upper()), int(loc1[1:])
-    x2, y2 = alph.index(loc2[0].upper()), int(loc2[1:])
-    dx = abs(x1 - x2)
-    dy = abs(y1 - y2)
-    distance = sqrt(dx**2 + dy**2) * 5  # Using 5ft grid
-    return distance
-
 def find_best_target(monster, target_names, max_surrounding=2):
     if monster.stats.intelligence < 10:
         return target_names[randint(len(target_names))]
@@ -380,76 +223,41 @@ def find_best_aoe_position(spell, caster_loc, targets):
     return None
 
 def move_towards(start, end, distance, occupied_positions):
-    start_x_letter = ''.join(filter(str.isalpha, start)).upper()
-    start_y_num = int(''.join(filter(str.isdigit, start)))
-    start_x_index = alph.index(start_x_letter)
-    
-    end_x_letter = ''.join(filter(str.isalpha, end)).upper()
-    end_y_num = int(''.join(filter(str.isdigit, end)))
-    end_x_index = alph.index(end_x_letter)
-    
-    dx = end_x_index - start_x_index
-    dy = end_y_num - start_y_num
-    
-    if dx == 0 and dy == 0:
-        return start, ""
-    
-    total_distance = sqrt(dx**2 + dy**2) * 5
-    ratio = min(distance / total_distance, 1) if total_distance > 0 else 0
-    move_x = start_x_index + dx * ratio
-    move_y = start_y_num + dy * ratio
-    
-    new_x_index = int(round(move_x))
-    new_y_num = int(round(move_y))
-    
-    new_x_index = max(0, min(len(alph) - 1, new_x_index))
-    new_y_num = max(1, min(20, new_y_num))
-    
-    new_location = f"{alph[new_x_index]}{new_y_num}"
-    
+    start_pos = mapl.loc_to_coords(start)
+    end_pos = mapl.loc_to_coords(end)
+    total_distance = mapl.distance(start_pos, end_pos) * 5
+    dxy = mapl.subtract_coords(end_pos, start_pos)
+    ratio = min(distance / total_distance, 1) if 0 < total_distance else 0
+    move_coords = mapl.add_coords(start_pos, mapl.scale_coords(dxy, ratio))
+    new_location = mapl.coords_to_loc(move_coords)
+
     # Check if the new location is occupied
     if new_location in occupied_positions:
         new_location = find_nearest_unoccupied_position(start, end, occupied_positions)
     
     # Calculate actual movement for the arrow
-    new_x_index = alph.index(new_location[0])
-    new_y_num = int(new_location[1:])
-    deltaX = new_x_index - start_x_index
-    deltaY = new_y_num - start_y_num
-    distanceT = int(round(sqrt(deltaX**2 + deltaY**2), 0)) * 5
-    
-    # Use red color for the arrow
-    colr = 'r'
+    new_pos = mapl.loc_to_coords(new_location)
+    distanceT = round(mapl.distance(start_pos, new_pos)) * 5
     
     # Generate arrow overlay with correct syntax
-    arrow = f"*a{distanceT}{colr}{start_x_letter}{start_y_num}{alph[new_x_index]}{new_y_num}"
+    color = 'r' # Use red color for the arrow
+    arrow = f"*a{distanceT}{color}{start}{new_location}"
     
     return new_location, arrow
 
 def create_arrow_overlay(start_location, end_location):
-    start_x_letter = ''.join(filter(str.isalpha, start_location)).upper()
-    start_y_num = int(''.join(filter(str.isdigit, start_location)))
-    start_x_index = alph.index(start_x_letter)
-    
-    end_x_letter = ''.join(filter(str.isalpha, end_location)).upper()
-    end_y_num = int(''.join(filter(str.isdigit, end_location)))
-    end_x_index = alph.index(end_x_letter)
-    
-    deltaX = end_x_index - start_x_index
-    deltaY = end_y_num - start_y_num
-    distanceT = int(round(sqrt(deltaX**2 + deltaY**2), 0)) * 5  # Assuming 5ft per grid
-    
-    # Use red color for the arrow
-    colr = 'r'
+    start_pos = mapl.loc_to_coords(start_location)
+    end_pos = mapl.loc_to_coords(end_location)
+    distanceT = round(mapl.distance(start_pos, end_pos)) * 5
     
     # Generate arrow overlay with correct syntax
-    arrow = f"*a{distanceT}{colr}{start_x_letter}{start_y_num}{end_x_letter}{end_y_num}"
-    
+    colr = 'r' # Use red color for the arrow
+    arrow = f"*a{distanceT}{colr}{start_location}{end_location}"
     return arrow
 
 def update_monster_position(monster, new_location):
     # Parse the current note
-    note_data = parse_note(monster.note)
+    note_data = mapl.parse_note(monster.note)
     old_location = note_data.get('location', None)
     size_letter = note_data.get('size', 'M')
     size_map = {'T': 1, 'S': 1, 'M': 1, 'L': 2, 'H': 3, 'G': 4}
@@ -464,7 +272,7 @@ def update_monster_position(monster, new_location):
     note_data['location'] = new_location
 
     # Use the update_combatant_note function to set the new note
-    update_combatant_note(monster, **note_data)
+    mapl.update_combatant_note(monster, **note_data)
 
     # Update the out dictionary
     out[monster.name] = out.get(monster.name, {})
@@ -478,16 +286,11 @@ def get_occupied_positions(location, size_grid):
     """
     Given a location (e.g., 'E5') and size in grid cells, return a set of occupied positions.
     """
-    x_letter = ''.join(filter(str.isalpha, location)).upper()
-    y_num = int(''.join(filter(str.isdigit, location)))
-    x_index = alph.index(x_letter)
-
+    pos = mapl.loc_to_coords(location)
     positions = set()
     for dx in range(size_grid):
         for dy in range(size_grid):
-            x = x_index + dx
-            y = y_num + dy
-            positions.add((x, y))
+            positions.add((pos[0] + dx, pos[1] + dy))
     return positions
 
 def find_unoccupied_positions_near_target(target_location, monster_size_grid, occupied_positions, map_width, map_height):
@@ -582,14 +385,6 @@ def get_monster_data(monster_name, data_needed):
                 return obtained_monster_data
     return False
 
-def mapPresent():
-    map_combatant = None
-    for name in ("map", "dm", "lair"):
-        map_combatant = c.get_combatant(name)
-        if map_combatant:
-            break
-    return map_combatant
-
 def filter(func, iterable):
     return [item for item in iterable if func(item)]
 
@@ -617,7 +412,8 @@ def find_nearest_unoccupied_position(start, end, occupied_positions):
         return start  # No available positions, stay at current position
     
     # Find the nearest available position
-    return min(available_positions, key=lambda pos: calculate_distance(start, pos))
+    start_pos = mapl.loc_to_coords(start)
+    return min(available_positions, key=lambda pos: mapl.distance(start_pos, mapl.loc_to_coords(pos)) * 5)
 
 def get_attack_reach(attack_str):
     attack_str = attack_str.lower()
@@ -661,7 +457,7 @@ def process_monster_turn(indexed_combatant, targets, c, out, overlays, desc, com
     # Check if the monster is already dead at the start of its turn
     if monster.hp <= 0:
         remove_dead_monster(c, monster, out, desc)
-        map_url = generate_map_image(overlays)
+        map_url = mapl.generate_map_image(overlays)
         command_list.append(f'{pref}embed -title "Skipping dead monster: {monster_name}" -desc "{monster_name} has been defeated and removed from the map. Its turn will be skipped." -image "{map_url}" -footer "{footer}"')
         command_list.append(f'{pref}i n')  # Skip to next turn
         return
@@ -676,7 +472,7 @@ def process_monster_turn(indexed_combatant, targets, c, out, overlays, desc, com
                 break
 
     # Check if map is present
-    map_present = mapPresent()
+    map_present = mapl.mapPresent()
     if map_present and monster_location:
         chosen_target = find_best_target(monster, targets)
         target_combatant = c.get_combatant(chosen_target)
@@ -693,7 +489,9 @@ def process_monster_turn(indexed_combatant, targets, c, out, overlays, desc, com
                     break
 
         if target_location:
-            distance = calculate_distance(monster_location, target_location)
+            start_pos = mapl.loc_to_coords(monster_location)
+            end_pos = mapl.loc_to_coords(target_location)
+            distance = mapl.distance(start_pos, end_pos) * 5
             monster_speed = get_monster_speed(monster_name)
             max_attack_reach = get_max_attack_reach(monster.attacks)
             
@@ -703,7 +501,7 @@ def process_monster_turn(indexed_combatant, targets, c, out, overlays, desc, com
             # Before moving, display the map
             map_state["combatants"] = out
             toggle_monster_color(monster, 'p')
-            map_url = generate_map_image(overlays)
+            map_url = mapl.generate_map_image(overlays)
             command_list.append(f'{pref}embed -title "Monster Turn: {monster.name}" -desc "Monster is deciding its action..." -image "{map_url}" -footer "{footer}"')
 
             occupied_positions = set(out[name].get('location') for name in out if 'location' in out[name])
@@ -747,7 +545,7 @@ def process_monster_turn(indexed_combatant, targets, c, out, overlays, desc, com
                         
                         # After movement, display the updated map
                         map_state["combatants"] = out
-                        map_url = generate_map_image(overlays)
+                        map_url = mapl.generate_map_image(overlays)
                         command_list.append(f'{pref}embed -title "Monster Movement: {monster.name}" -desc "{desc[-1]}" -image "{map_url}" -footer "{footer}"')
                     else:
                         desc.append(f"{indexed_combatant} holds position, already at an ideal vantage point.")
@@ -772,7 +570,7 @@ def process_monster_turn(indexed_combatant, targets, c, out, overlays, desc, com
                     monster_location = new_location
                     desc.append(f"{indexed_combatant} dashes {int(move_distance)} ft. towards {chosen_target}.")
                     map_state["combatants"] = out
-                    map_url = generate_map_image(overlays)
+                    map_url = mapl.generate_map_image(overlays)
                     command_list.append(f'{pref}embed -title "Monster Dashes: {monster.name}" -desc "{desc[-1]}" -image "{map_url}" -footer "{footer}"')
                     command_list.append(f'{pref}i n')
                     return
@@ -783,14 +581,16 @@ def process_monster_turn(indexed_combatant, targets, c, out, overlays, desc, com
                     if arrow:
                         overlays.append(arrow)
                     monster_location = new_location
-                    distance = calculate_distance(monster_location, target_location)
+                    start_pos = mapl.loc_to_coords(monster_location)
+                    end_pos = mapl.loc_to_coords(target_location)
+                    distance = mapl.distance(start_pos, end_pos) * 5
                     desc.append(f"{indexed_combatant} moves {int(move_distance)} ft. towards {chosen_target}.")
             else:
                 desc.append(f"{indexed_combatant} holds position to attack {chosen_target}.")
 
             # After movement, display the updated map
             map_state["combatants"] = out
-            map_url = generate_map_image(overlays)
+            map_url = mapl.generate_map_image(overlays)
             command_list.append(f'{pref}embed -title "Monster Movement: {monster.name}" -desc "{desc[-1]}" -image "{map_url}" -footer "{footer}"')
 
         else:
@@ -830,7 +630,7 @@ def process_monster_turn(indexed_combatant, targets, c, out, overlays, desc, com
 
     if monster.hp <= 0:
         remove_dead_monster(c, monster, out, desc)
-        map_url = generate_map_image(overlays)
+        map_url = mapl.generate_map_image(overlays)
         command_list.append(f'{pref}embed -title "Skipping dead monster: {monster_name}" -desc "{monster_name} has been defeated and removed from the map. Its turn will be skipped." -image "{map_url}" -footer "{footer}"')
         return
 
@@ -840,7 +640,7 @@ def remove_dead_monster(combat, monster, out, desc):
     desc.append(f"{monster.name} has fallen and been removed from the map.")
 
 def toggle_monster_color(monster, new_color):
-    note_dict = parse_note(monster.note)
+    note_dict = mapl.parse_note(monster.note)
     original_color = note_dict.get('color', 'r')
     note_dict['color'] = new_color
     new_note = ' | '.join(f"{k.title()}: {v}" for k, v in note_dict.items())
@@ -864,7 +664,7 @@ def load_specific_map(map_subtext):
     map_state["bg_image"] = map_data["image"]
     
     # Get the current map combatant
-    map_combatant = mapPresent()
+    map_combatant = mapl.mapPresent()
     
     if not map_combatant:
         return False, f"Map combatant not found. You can manually add it using:\n`!i add 0 Map -p 20`\n\n**RECOMMENDED ACTION**:\nPlease type: ```{cmd}```\nto setup the map automatically before loading the map preset."
@@ -876,7 +676,7 @@ def load_specific_map(map_subtext):
     # Attach the updated map to the combatant
     place_combatants([c for c in combatants if autolib.isMonster(c) and c.name.lower() not in ['dm', 'map', 'lair']], True)
     place_combatants([c for c in combatants if not autolib.isMonster(c) and c.name.lower() not in ['dm', 'map', 'lair']], False)
-    success, message = attach_map_to_combatant(map_state)
+    success, message = mapl.attach_map_to_combatant(map_state)
     
     if success:
         base_message = f"`{map_name}` map loaded successfully. Combat positions assigned.\n\n**Map-Art Courtesy of**:\n[2-Minute Tabletop](https://2minutetabletop.com/) under the [CC BY-NC 4.0 License](https://creativecommons.org/licenses/by-nc/4.0/)"
@@ -919,7 +719,7 @@ if not (inp == 'help' or inp == '?'):
             success, message = load_specific_map(map_subtext)
             if success:
                 # Generate the updated map image
-                map_url = generate_map_image()
+                map_url = mapl.generate_map_image()
                 command_list.append(f'{pref}embed -title "Map Updated" -desc "{message}" -image "{map_url}" -footer "{footer}"')
             else:
                 command_list.append(f'{pref}embed -title "Map Setup Pending:" -desc "{message}" -footer "{footer}"')
@@ -947,7 +747,7 @@ if not (inp == 'help' or inp == '?'):
         if not targets:
             err(f'No playable characters found within Combat Initiative to target!\n\nPlease join the combat initiative using `{pref}i join` or remove ghost effect from characters')
 
-        map_combatant = mapPresent()
+        map_combatant = mapl.mapPresent()
         map_initialized = False
 
         if map_combatant:
@@ -970,7 +770,7 @@ if not (inp == 'help' or inp == '?'):
             mapoptions = random_map_data["cell_pixel"]
             walls = objects = mapviewlocation = mapviewsize = ''
 
-            map_combatant = mapPresent()
+            map_combatant = mapl.mapPresent()
 
             if not map_combatant:
                 missing_map_warning = f'Map init object missing!\n\nPlease add a map object to combat using:\n```{pref}i add 0 Map -p 20```'
@@ -986,10 +786,10 @@ if not (inp == 'help' or inp == '?'):
 
             place_combatants([c for c in combatants if autolib.isMonster(c) and c.name.lower() not in ['dm', 'map', 'lair']], True)
             place_combatants([c for c in combatants if not autolib.isMonster(c) and c.name.lower() not in ['dm', 'map', 'lair']], False)
-            bool_result, map_status = attach_map_to_combatant(map_state)
+            bool_result, map_status = mapl.attach_map_to_combatant(map_state)
             if not bool_result:
                 return f"""embed -title "Map Missing!" -desc "{map_status}" -footer "{footer}" """
-            map_url = generate_map_image()
+            map_url = mapl.generate_map_image()
             command_list.append(f'{pref}embed -title "Map Initialized: {random_map_name.title()}" -desc "Combat positions assigned.\n\n**Map-Art Courtesy of**:\n[2-Minute Tabletop](https://2minutetabletop.com/) under the [CC BY-NC 4.0 License](https://creativecommons.org/licenses/by-nc/4.0/)" -image "{map_url}" -footer "{footer}"')
 
 
@@ -1041,7 +841,7 @@ if not (inp == 'help' or inp == '?'):
                     return command
                 if indexed_combatant in monst_list:
                     monster = c.get_combatant(indexed_combatant)    
-                    note = parse_note(monster.note)
+                    note = mapl.parse_note(monster.note)
 
                     if not note or not 'location' in note:
                         process_map_absentee_monster_turn(indexed_combatant, command_list)
@@ -1068,7 +868,7 @@ if not (inp == 'help' or inp == '?'):
 
 
             if overlays:
-                map_url = generate_map_image(overlays)
+                map_url = mapl.generate_map_image(overlays)
                 map_embed = f'{pref}embed -title "Monster Movement Summary" -desc "Monster movements so far:" -image "{map_url}" -footer "{footer}"'
                 command_list.append(map_embed)
 
@@ -1114,7 +914,7 @@ To move your player character on the map:
                 # Update map_state["combatants"] with 'out'
                 map_state["combatants"] = out
                 if overlays:
-                    map_url = generate_map_image(overlays)
+                    map_url = mapl.generate_map_image(overlays)
                     map_embed = f'{pref}embed -title "Updated Map" -desc "Monster movements displayed" -image "{map_url}" -footer "{footer}"'
                     command_list.append(map_embed)
                 command += nl.join(command_list)
