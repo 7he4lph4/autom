@@ -395,7 +395,8 @@ def get_surrounding_positions(center):
     return [f"{alph[pos[0]]}{pos[1]}" for pos in surrounding if 0 <= pos[0] < len(alph) and 1 <= pos[1] <= 20]
 
 def find_nearest_unoccupied_position(start, end, occupied_positions):
-    end_surrounding = get_surrounding_positions(end)
+    end_pos = mapl.loc_to_coords(end)
+    end_surrounding = [mapl.coords_to_loc(p) for p in mapl.out_box(end_pos, 0)]
     available_positions = [pos for pos in end_surrounding if pos not in occupied_positions]
     
     if not available_positions:
@@ -554,11 +555,16 @@ def process_monster_turn(indexed_combatant, targets, c, out, overlays, desc, com
                 unoccupied_melee_positions = [pos for pos in target_melee_positions if pos not in occupied_positions]
                 if 0 < len(unoccupied_melee_positions):
                     target_melee_positions = unoccupied_melee_positions
-                distance, n1, melee_position = mapl.get_nearest_coords([start_pos], target_melee_positions)
+                melee_position = mapl.get_nearest_coords([start_pos], target_melee_positions)[2]
                 melee_location = mapl.coords_to_loc(melee_position)
                 if move_distance < distance - max_attack_reach:                  
                     # Monster needs to dash
                     move_distance = min(monster_speed * 2, distance - max_attack_reach)
+                    # map_size = mapl.parse_mapsize(mapl.get_map_info().get("size"))
+                    # circle = map.circle(start_pos, monster_speed * 2,bounds=[0, 1, map_size[0], map_size[1]])
+                    # for oco in occupied_positions:
+                    #     if oco in circle:
+                    #         circle.remove(oco)
                     new_location, arrow = move_towards(monster_location, target_location, move_distance, occupied_positions)
                     update_monster_position(monster, new_location)
                     occupied_positions.add(new_location)
@@ -583,8 +589,10 @@ def process_monster_turn(indexed_combatant, targets, c, out, overlays, desc, com
                         overlays.append(arrow)
                     start_pos = mapl.loc_to_coords(monster_location)
                     end_pos = mapl.loc_to_coords(new_location)
-                    distance = mapl.distance(start_pos, end_pos) * 5
-                    desc.append(f"{indexed_combatant} moves {int(move_distance)} ft. towards {chosen_target}.")
+                    moved_distance = mapl.distance(start_pos, end_pos) * 5
+                    new_monster_box = mapl.box(end_pos, monster_size_mod)
+                    distance = round(mapl.get_nearest_coords(new_monster_box, target_box)[0]) * 5
+                    desc.append(f"{indexed_combatant} moves {int(moved_distance)} ft. towards {chosen_target}.")
             else:
                 desc.append(f"{indexed_combatant} holds position to attack {chosen_target}.")
 
@@ -602,6 +610,8 @@ def process_monster_turn(indexed_combatant, targets, c, out, overlays, desc, com
         desc.append(f"{indexed_combatant} attacks {chosen_target}.")
 
     # Attack logic
+    
+    # command_list.append(f"{pref}echo DISTANCEEEE: {distance}")
     if distance <= get_max_attack_reach(monster.attacks) and (curr_hp > 0 or autolib.onDeath(indexed_combatant, c.combatants) == "relentless"):
         # Multiattack logic
         mon_actions = autolib.getActions(monster_name, autolib.buildDB())

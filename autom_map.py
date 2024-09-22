@@ -224,7 +224,7 @@ def get_size_mod(size):
     return size_map.get(size[0].upper(), 0)
 
 
-def box(top_left, size, include_inner=False):
+def box(top_left, size=0, include_inner=False):
     bottom_right = add_coords(top_left, [size, size])
     return [
         (x, y)
@@ -239,7 +239,7 @@ def box(top_left, size, include_inner=False):
     ]
 
 
-def out_box(top_left, size, include_inner=False):
+def out_box(top_left, size=0, include_inner=False):
     out_top_left = subtract_coords(top_left, [1, 1])
     return box(out_top_left, size + 2, include_inner)
 
@@ -271,12 +271,14 @@ def center(top_left, size):
 
 
 # Bresenham Circle Algorithm
-def circle(center, radius, fill=False, offset=0):
+def circle(center, radius, offset=0, bounds=[0, 1, 20, 21]):
     if radius < 0:
         return [center]
     h, k = center[0], center[1]
     offset += 0 if ((h % 1 == 0) and (k % 1 == 0)) else 0.5
     x, y = offset, radius - offset
+
+    points = []
 
     def oct_points(h, k, x, y):
         return [
@@ -291,7 +293,7 @@ def circle(center, radius, fill=False, offset=0):
         ]
 
     points = oct_points(h, k, x, y + offset)
-    d = 1 - radius - 0.5
+    d = 1 - radius  # - 0.5
     while x < y:
         x += 1
         if d < 0:
@@ -301,11 +303,10 @@ def circle(center, radius, fill=False, offset=0):
             d += 2 * (x - y) + 1
         xoct_points = oct_points(h, k, x, y + offset)
         points += xoct_points
-    c_points = []
-    [
-        c_points.append(p)
-        for p in points
-        if p not in c_points and (0 < p[0] and 0 < p[1])
+    points = [
+        p
+        for p in list(set(points))
+        if (bounds[0] <= p[0] < bounds[2]) and (bounds[1] <= p[1] < bounds[3])
     ]
-    c_points.sort(key=lambda x: (x[0], x[1]))
-    return c_points, offset
+    points.sort(key=lambda x: (x[0], x[1]))
+    return points
