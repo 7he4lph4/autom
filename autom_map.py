@@ -254,10 +254,10 @@ def occupied_box(size1, c2, size2):
     return box(occ_top_left, size1 + size2, True)
 
 
-def get_occupied_coords(my_name, my_size):
+def get_occupied_coords(my_name="", my_size=0):
     occupied = set()
     for name, data in get_all_map_combatants().items():
-        if name == my_name:
+        if name and (name == my_name):
             continue
         if "location" in data:
             pos = loc_to_coords(data["location"])
@@ -271,12 +271,12 @@ def center(top_left, size):
 
 
 # Bresenham Circle Algorithm
-def circle(center, radius):
+def circle(center, radius, fill=False, offset=0):
     if radius < 0:
         return [center]
     h, k = center[0], center[1]
-    mod = 0 if ((h % 1 == 0) and (k % 1 == 0)) else 0.5
-    x, y = mod, radius - mod
+    offset += 0 if ((h % 1 == 0) and (k % 1 == 0)) else 0.5
+    x, y = offset, radius - offset
 
     def oct_points(h, k, x, y):
         return [
@@ -290,7 +290,7 @@ def circle(center, radius):
             (h - y, k - x),
         ]
 
-    points = oct_points(h, k, x, y + mod)
+    points = oct_points(h, k, x, y + offset)
     d = 1 - radius - 0.5
     while x < y:
         x += 1
@@ -299,7 +299,7 @@ def circle(center, radius):
         else:
             y -= 1
             d += 2 * (x - y) + 1
-        xoct_points = oct_points(h, k, x, y + mod)
+        xoct_points = oct_points(h, k, x, y + offset)
         points += xoct_points
     c_points = []
     [
@@ -308,4 +308,4 @@ def circle(center, radius):
         if p not in c_points and (0 < p[0] and 0 < p[1])
     ]
     c_points.sort(key=lambda x: (x[0], x[1]))
-    return c_points, mod
+    return c_points, offset
