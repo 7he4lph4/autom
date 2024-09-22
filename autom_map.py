@@ -88,6 +88,14 @@ def attach_map_to_combatant(map_state):
     return True, f"Map information attached to {map_combatant.name}"
 
 
+def get_all_map_combatants():
+    return {
+        co.name: parse_note(co.note)
+        for co in c.combatants
+        if co.name.lower() not in ["map", "dm", "lair"]
+    }
+
+
 def generate_map_image(overlays=None):
     map_url = f"{get('otfbm_base_url', 'http://otfbm.io/')}"
 
@@ -200,11 +208,26 @@ def distance(coord1, coord2):
     return sqrt((coord2[0] - coord1[0]) ** 2 + (coord2[1] - coord1[1]) ** 2)
 
 
+def get_nearest_coords(coords1, coords2, max_dist=-1):
+    dist, c1_nearest, c2_nearest = -1, (0, 0), (0, 0)
+    for gc1 in coords1:
+        for gc2 in coords2:
+            d = distance(gc1, gc2)
+            if (d < dist or dist < 0) and (d <= max_dist or max_dist < 0):
+                dist, c1_nearest, c2_nearest = d, gc1, gc2
+    return dist, c1_nearest, c2_nearest
+
+
 # Sizes: <=M: 0, L: 1, H: 2, G: 3
+def get_size_mod(size):
+    size_map = {"T": 0, "S": 0, "M": 0, "L": 1, "H": 2, "G": 3}
+    return size_map.get(size[0].upper(), 0)
+
+
 def box(top_left, size, include_inner=False):
     bottom_right = add_coords(top_left, [size, size])
     return [
-        [x, y]
+        (x, y)
         for x in range(top_left[0], bottom_right[0] + 1)
         for y in range(top_left[1], bottom_right[1] + 1)
         if (
@@ -212,13 +235,35 @@ def box(top_left, size, include_inner=False):
             or x in [top_left[0], bottom_right[0]]
             or y in [top_left[1], bottom_right[1]]
         )
-        and (0 < x and 0 < y)
+        and (0 <= x and 0 < y)
     ]
 
 
 def out_box(top_left, size, include_inner=False):
     out_top_left = subtract_coords(top_left, [1, 1])
     return box(out_top_left, size + 2, include_inner)
+
+
+def melee_box(size1, c2, size2):
+    move_top_left = subtract_coords(c2, [size1 + 1, size1 + 1])
+    return box(move_top_left, size1 + size2 + 2)
+
+
+def occupied_box(size1, c2, size2):
+    occ_top_left = subtract_coords(c2, [size1, size1])
+    return box(occ_top_left, size1 + size2, True)
+
+
+def get_occupied_coords(my_name, my_size):
+    occupied = set()
+    for name, data in get_all_map_combatants().items():
+        if name == my_name:
+            continue
+        if "location" in data:
+            pos = loc_to_coords(data["location"])
+            size = get_size_mod(data.get("size", "M"))
+            occupied.update(occupied_box(my_size, pos, size))
+    return occupied
 
 
 def center(top_left, size):
