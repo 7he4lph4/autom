@@ -225,15 +225,17 @@ def get_size_mod(size):
 
 
 def box(top_left, size=0, include_inner=False):
-    bottom_right = add_coords(top_left, [size, size])
+    x0, y0 = int(top_left[0]), int(top_left[1])
+    size = int(size)
+    bottom_right = [x0 + size, y0 + size]
     return [
         (x, y)
-        for x in range(top_left[0], bottom_right[0] + 1)
-        for y in range(top_left[1], bottom_right[1] + 1)
+        for x in range(x0, bottom_right[0] + 1)
+        for y in range(y0, bottom_right[1] + 1)
         if (
             include_inner
-            or x in [top_left[0], bottom_right[0]]
-            or y in [top_left[1], bottom_right[1]]
+            or x in [x0, bottom_right[0]]
+            or y in [y0, bottom_right[1]]
         )
         and (0 <= x and 0 < y)
     ]
@@ -310,3 +312,41 @@ def circle(center, radius, offset=0, bounds=[0, 1, 20, 21]):
     ]
     points.sort(key=lambda x: (x[0], x[1]))
     return points
+
+
+def get_line_area(start_pos, end_pos, width=0):
+    # Generate the list of coordinates covered by a line from start_pos to end_pos
+    # Implement Bresenham's Line Algorithm to get the points on the line
+    x1, y1 = int(round(start_pos[0])), int(round(start_pos[1]))
+    x2, y2 = int(round(end_pos[0])), int(round(end_pos[1]))
+    coords = []
+    dx = abs(x2 - x1)
+    dy = abs(y2 - y1)
+    x, y = x1, y1
+    sx = -1 if x1 > x2 else 1
+    sy = -1 if y1 > y2 else 1
+    if dx == 0 and dy == 0:
+        coords.extend(box([x, y], width))
+    elif dx >= dy:
+        err = dx / 2.0
+        while x != x2:
+            coords.extend(box([x, y], width))
+            err -= dy
+            if err < 0:
+                y += sy
+                err += dx
+            x += sx
+        coords.extend(box([x, y], width))
+    else:
+        err = dy / 2.0
+        while y != y2:
+            coords.extend(box([x, y], width))
+            err -= dx
+            if err < 0:
+                x += sx
+                err += dy
+            y += sy
+        coords.extend(box([x, y], width))
+    # Remove duplicates
+    coords = list(set(coords))
+    return coords
