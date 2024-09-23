@@ -93,7 +93,7 @@ def place_combatants(combatants, is_monster):
             
             # Fetch the monster's size from the custom database
             if combatant.monster_name:
-                mon_size = get_monster_data(combatant.monster_name, 'meta')
+                mon_size = get_monster_size(combatant.monster_name)
                 if mon_size:
                     mon_size = mon_size.split()[0]
                 else:
@@ -218,9 +218,267 @@ def find_best_target(monster, target_names, max_surrounding=2):
     # If all targets have large monsters nearby, choose a random target from the valid ones (those with HP > 0)
     return randchoice([t.name for t, _ in target_hp]) if target_hp else None
 
-def find_best_aoe_position(spell, caster_loc, targets):
-    # Implementation TBD
+def fetch_and_store_monster_data():
+    monster_data = {}
+    for combatant in c.combatants:
+        if combatant.monster_name:
+            full_data = get_monster_data(combatant.monster_name, None)
+            if full_data:
+                monster_data[combatant.name] = full_data
+    
+    # Store the data in combat metadata
+    c.set_metadata('monster_data', dump_json(monster_data))
+
+def get_stored_monster_data(monster_name, field=None):
+    monster_data = load_json(c.get_metadata('monster_data', '{}'))
+    if monster_name in monster_data:
+        if field:
+            return monster_data[monster_name].get(field)
+        return monster_data[monster_name]
     return None
+
+def update_stored_monster_data(monster_name, data):
+    monster_data = load_json(c.get_metadata('monster_data', '{}'))
+    monster_data[monster_name] = data
+    c.set_metadata('monster_data', dump_json(monster_data))
+
+def remove_stored_monster_data(monster_name):
+    monster_data = load_json(c.get_metadata('monster_data', '{}'))
+    if monster_name in monster_data:
+        del monster_data[monster_name]
+        c.set_metadata('monster_data', dump_json(monster_data))
+
+def get_aoe_attacks(monster_name):
+    aoe_keywords = ["cone", "line", "radius", "sphere", "cube", "cylinder"]
+    monster_attacks = []
+
+    monster_data = get_stored_monster_data(monster_name)
+
+    if not monster_data:
+        return []
+
+    action_fields = ['Actions', 'Traits', 'Legendary Actions']
+    actions_text = ' '.join(monster_data.get(field, '') for field in action_fields)
+    sentences = actions_text.replace('\n', ' ').split('. ')
+    
+    for i, sentence in enumerate(sentences):
+        sentence_lower = sentence.lower()
+        if any(keyword in sentence_lower for keyword in aoe_keywords) and '-foot' in sentence_lower:
+            attack_name = sentences[i-1].strip() if i > 0 else sentence.split('(')[0].strip()
+            size = None
+            shape = None
+            width = None
+            words = sentence_lower.split()
+            for j, word in enumerate(words):
+                if '-foot' in word:
+                    size_parts = word.split('-')
+                    if size_parts[0].isdigit():
+                        size = size_parts[0]
+                if word in aoe_keywords:
+                    shape = word
+                    possible_widths = [words[k] for k in range(max(0, j-2), min(j+4, len(words)))]
+                    for item in possible_widths:
+                        if item.isdigit() and (words[words.index(item) + 1] in ['feet', 'foot']):
+                            width = item
+            if size and shape:
+                attack_info = {
+                    'name': attack_name,
+                    'size': int(size),
+                    'shape': shape,
+                    'width': int(width) if width else None
+                }
+                monster_attacks.append(attack_info)
+    
+    return monster_attacks
+
+def get_map_size():
+    mapsize = "10x10"  # Default map size
+    maxSize = 99
+
+    # Check if there's a map combatant with size information
+    c = combat()
+    if c:
+        for combatant in c.combatants:
+            for attack in combatant.attacks:
+                if attack.name == 'map':
+                    mapinfo = attack.raw.automation[-1].text
+                    mapinfo = mapinfo.split(' ~ ')
+                    mapinfo = {x[0].lower():x[1] for x in [item.split(': ') for item in mapinfo]}
+                    if mapinfo.get('size'):
+                        mapsize = mapinfo.get('size')
+                    break
+            if mapsize != "10x10":
+                break
+
+    # Parse the mapsize
+    if mapsize != "JSON":
+        if ":" in mapsize:
+            mapsize = mapsize.split(':')[1]
+        if mapsize[0].isdigit():
+            mapSplitX, mapSplitY = mapsize.lower().split('x')
+            mapX = min(int(mapSplitX) if mapSplitX.isdigit() else 1, maxSize)
+            mapY = min(int(mapSplitY) if mapSplitY.isdigit() else 1, maxSize)
+        else:
+            baseAlph = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+            alph = []
+            for index in range(maxSize):
+                letter = ""
+                if index // 26:
+                    letter = baseAlph[(index // 26) - 1]
+                letter += baseAlph[index % 26]
+                alph.append(letter)
+            mapX = alph.index(''.join(x.upper() for x in mapsize if x.isalpha())) + 1
+            mapY = int(''.join(y for y in mapsize if y.isdigit()))
+    else:
+        mapX = mapY = 10  # Default size for JSON
+
+    return mapX, mapY
+
+def find_best_aoe_position(monster, aoe_attack, target_names):
+    best_position = None
+    max_targets = 0
+    monster_map_data = mapl.parse_note(monster.note)
+    monster_location = monster_map_data.get('location', None)
+    if not monster_location:
+        return None
+
+    mapX, mapY = get_map_size()
+
+    # Generate positions in the monster's line of sight/direction
+    # For simplicity, we'll consider positions in front of the monster
+    # Assuming the monster is facing towards the majority of targets
+
+    # Find the center position of all targets to determine general direction
+    target_positions = []
+    for target_name in target_names:
+        target = c.get_combatant(target_name)
+        if target:
+            target_map_data = mapl.parse_note(target.note)
+            target_location = target_map_data.get('location', None)
+            if target_location:
+                coords = mapl.loc_to_coords(target_location)
+                target_positions.append(coords)
+
+    if not target_positions:
+        return None
+
+    # Calculate average position of targets
+    avg_x = sum(pos[0] for pos in target_positions) / len(target_positions)
+    avg_y = sum(pos[1] for pos in target_positions) / len(target_positions)
+    direction_vector = [avg_x - mapl.loc_to_coords(monster_location)[0], avg_y - mapl.loc_to_coords(monster_location)[1]]
+
+    # Normalize direction vector
+    length = sqrt(direction_vector[0] ** 2 + direction_vector[1] ** 2)
+    if length == 0:
+        direction_vector = [0, 1]  # Default direction
+    else:
+        direction_vector = [direction_vector[0] / length, direction_vector[1] / length]
+
+    # Check positions in the direction the monster is facing
+    for distance in range(1, max(mapX, mapY)):
+        x = mapl.loc_to_coords(monster_location)[0] + int(direction_vector[0] * distance)
+        y = mapl.loc_to_coords(monster_location)[1] + int(direction_vector[1] * distance)
+        if x < 0 or y < 1 or x >= len(alph) or y > mapY:
+            break
+        position = f"{alph[x]}{y}"
+        affected_targets = count_affected_targets(position, aoe_attack, target_names)
+        if affected_targets > max_targets:
+            max_targets = affected_targets
+            best_position = position
+
+    return best_position
+
+
+def count_affected_targets(position, aoe_attack, targets):
+    affected = 0
+
+    for target in targets:
+        target_map_data = mapl.parse_note(c.get_combatant(target).note)
+        target_location = target_map_data.get('location', None)
+        if target_location and is_in_aoe(position, target_location, aoe_attack):
+            affected += 1
+    return affected
+
+def is_in_aoe(origin, target, aoe_attack):
+    ox, oy = alph.index(origin[0]), int(origin[1:])
+    tx, ty = alph.index(target[0]), int(target[1:])
+    dx, dy = abs(tx - ox), abs(ty - oy)
+    distance = max(dx, dy) * 5  # Assuming 5ft per square
+
+    if aoe_attack['shape'] in ['cone', 'sphere', 'radius']:
+        return distance <= aoe_attack['size']
+    elif aoe_attack['shape'] == 'line':
+        return (dx == 0 or dy == 0 or dx == dy) and distance <= aoe_attack['size']
+    elif aoe_attack['shape'] in ['cube', 'cylinder']:
+        return dx <= aoe_attack['size'] // 5 and dy <= aoe_attack['size'] // 5
+
+    return False
+
+def distance(pos1, pos2):
+    x1, y1 = alph.index(pos1[0].upper()), int(pos1[1:])
+    x2, y2 = alph.index(pos2[0].upper()), int(pos2[1:])
+    dx = abs(x2 - x1)
+    dy = abs(y2 - y1)
+    
+    # D&D 5e uses a simplified diagonal movement rule
+    # where every other diagonal counts as 10 feet instead of 5
+    diagonals = min(dx, dy)
+    straight = abs(dx - dy)
+    
+    return (diagonals * 5) + (straight * 5)
+
+def draw_aoe_overlay(monster, aoe_attack, position, targets):
+
+    shapeDict = [{"type": "circle",       "name":"c",  "num": [3], "args": ("size", "color", "loc")},
+               {"type": "circletop",    "name":"ct", "num": [3], "args": ("size", "color", "loc")},
+               {"type": "circlecorner", "name":"co", "num": [3], "args": ("size", "color", "loc")},
+               {"type": "cone",         "name":"t",  "num": [4], "args": ("size", "color", "loc", "eloc")},
+               {"type": "line",         "name":"l",  "num": [5], "args": ("size", "width", "color", "loc", "eloc")},
+               {"type": "arrow",        "name":"a",  "num": [3], "args": ("color", "loc", "eloc")},
+               {"type": "square",       "name":"s",  "num": [3,4], "args": ("size", "color", "loc", "eloc")},
+               {"type": "squaretop",    "name":"st", "num": [3,4], "args": ("size", "color", "loc", "eloc")}]
+
+    color = 'r'  # Default color for AoE
+    shape = aoe_attack['shape']
+    size = aoe_attack.get('size', 10)
+    
+    # Create a dictionary mapping shape names to their short codes
+    shape_to_code = {item['type']: item['name'] for item in shapeDict}
+    
+    if shape in ['sphere', 'radius', 'cube', 'cylinder']:
+        shape_code = shape_to_code['circle' if shape in ['sphere', 'radius'] else 'square']
+        return f"{shape_code}{size}{color}{position}"
+    
+    if shape in ['cone', 'line']:
+        nearest_target = min(targets, key=lambda t: distance(position, mapl.parse_note(c.get_combatant(t).note).get('location', 'A1')))
+        nearest_pos = mapl.parse_note(c.get_combatant(nearest_target).note).get('location', 'A1')
+        shape_code = shape_to_code[shape]
+        return f"{shape_code}{size},{aoe_attack.get('width', size) if shape == 'line' else ''}{color}{position}{nearest_pos}".rstrip(',')
+    
+    return None
+
+def find_adjacent_position(monster_location, target_position):
+    mx, my = alph.index(monster_location[0]), int(monster_location[1:])
+    tx, ty = alph.index(target_position[0]), int(target_position[1:])
+    
+    adjacent_positions = [
+        (mx-1, my), (mx+1, my), (mx, my-1), (mx, my+1),
+        (mx-1, my-1), (mx-1, my+1), (mx+1, my-1), (mx+1, my+1)
+    ]
+    
+    closest_position = min(adjacent_positions, key=lambda p: ((p[0]-tx)**2 + (p[1]-ty)**2))
+    return f"{alph[closest_position[0]]}{closest_position[1]}"
+
+def get_targets_in_aoe(monster_location, aoe_attack, target_names):
+    affected_targets = []
+    for target_name in target_names:
+        target = c.get_combatant(target_name)
+        if target:
+            target_map_data = mapl.parse_note(target.note)
+            target_location = target_map_data.get('location', None)
+            if target_location and is_in_aoe(monster_location, target_location, aoe_attack):
+                affected_targets.append(target_name)
+    return affected_targets
 
 def move_towards(start, end, distance, occupied_positions):
     start_pos = mapl.loc_to_coords(start)
@@ -344,8 +602,15 @@ def choose_closest_position_coords(monster_location, positions):
     distances.sort()
     return distances[0][1] if distances else None
 
+def get_monster_size(monster_name):
+    monster_data = get_stored_monster_data(monster_name)
+    if monster_data:
+        meta = monster_data.get('meta', '')
+        return meta.split()[0] if meta else 'Medium'  # Default to Medium if not found
+    return 'Medium'
+
 def get_monster_speed(monster_name):
-    speed_data = get_monster_data(monster_name, 'Speed')
+    speed_data = get_stored_monster_data(monster_name, 'Speed')
     if speed_data:
         # Extract digits from the speed data
         speed_digits = ''
@@ -356,7 +621,7 @@ def get_monster_speed(monster_name):
             return int(speed_digits)
     return 30  # Default speed if not found
 
-def get_monster_data(monster_name, data_needed):
+def get_monster_data(monster_name, data_needed=None):
     if not monster_name:
         return None
     db1 = '21934e43-b1aa-49b5-b252-68c0d78ed04c'
@@ -371,7 +636,7 @@ def get_monster_data(monster_name, data_needed):
         db = load_json(get_gvar(gvar_str))
         for mon_datum in db:
             if monster_name.casefold() == mon_datum["name"].casefold():
-                obtained_monster_data = mon_datum[data_needed]
+                obtained_monster_data = mon_datum.get(data_needed, '') if data_needed else mon_datum
                 return obtained_monster_data
     return False
 
@@ -445,6 +710,10 @@ def process_monster_turn(indexed_combatant, targets, c, out, overlays, desc, com
     monster_name = monster.monster_name
     curr_hp = monster.hp
 
+    # Fetch monster data if not already stored
+    if not get_stored_monster_data(monster_name):
+        fetch_and_store_monster_data()
+
     # Check if the monster is already dead at the start of its turn
     if monster.hp <= 0:
         remove_dead_monster(c, monster, out, desc)
@@ -461,6 +730,74 @@ def process_monster_turn(indexed_combatant, targets, c, out, overlays, desc, com
     # Check if map is present
     map_present = mapl.mapPresent()
     if map_present and monster_location:
+        # Get occupied positions to avoid collisions
+        occupied_positions = mapl.get_occupied_coords(monster.name)
+
+        ### AoE ###
+        aoe_attacks = get_aoe_attacks(monster.name)
+
+        if aoe_attacks:
+            aoe_attack = randchoice(aoe_attacks)
+
+            # Create a list of all potential targets (excluding the monster itself)
+            all_combatants = [c.name for c in c.combatants if c.name.lower() not in ['map', 'dm', 'lair']]
+            potential_targets = [name for name in all_combatants if name != monster.name]
+
+            # Find the best position for the AoE attack
+            best_position = find_best_aoe_position(monster, aoe_attack, potential_targets)
+
+            if best_position:
+                # Calculate the distance to the best position
+                start_pos = mapl.loc_to_coords(monster_location)
+                end_pos = mapl.loc_to_coords(best_position)
+                distance_to_position = mapl.distance(start_pos, end_pos) * 5
+
+                monster_speed = get_monster_speed(monster_name)
+
+                # Move the monster if needed
+                if distance_to_position > 0:
+                    move_distance = min(monster_speed, distance_to_position)
+                    new_location, arrow = move_towards(monster_location, best_position, move_distance, occupied_positions)
+                    update_monster_position(monster, new_location)
+                    occupied_positions.add(new_location)
+                    if arrow:
+                        overlays.append(arrow)
+                    monster_location = new_location
+                    desc.append(f"{indexed_combatant} moves {int(move_distance)} ft. towards the optimal position for its AoE attack.")
+
+                    # Display the updated map after movement
+                    map_state["combatants"] = out
+                    map_url = mapl.generate_map_image(overlays)
+                    command_list.append(f'{pref}embed -title "Monster Movement: {monster.name}" -desc "{desc[-1]}" -image "{map_url}" -footer "{footer}"')
+
+                # Adjust the AoE position for cone and line attacks
+                if aoe_attack['shape'] in ['cone', 'line']:
+                    best_position = find_adjacent_position(monster_location, best_position)
+
+                # Create and add the AoE overlay
+                overlay = draw_aoe_overlay(monster, aoe_attack, best_position, potential_targets)
+                if overlay:
+                    overlays.append(f"*{overlay}")
+                    desc.append(f"{monster.name} uses {aoe_attack['name']} starting at {monster_location} towards {best_position}")
+
+                    # Display the map with the AoE overlay
+                    map_url = mapl.generate_map_image(overlays)
+                    command_list.append(f'{pref}embed -title "AoE Attack: {monster.name}" -desc "{desc[-1]}" -image "{map_url}" -footer "{footer}"')
+
+                    # Find targets within the AoE
+                    affected_targets = get_targets_in_aoe(monster_location, aoe_attack, potential_targets)
+
+                    # Add the attack command targeting all affected combatants
+                    if affected_targets:
+                        target_string = " -t ".join(affected_targets)
+                        command_list.append(f'{ctx.prefix}i a "{aoe_attack["name"]}" -t {target_string} -phrase ":robot: _Triggered by auto monster AI_"')
+                    else:
+                        desc.append(f"No targets were caught in the AoE of {aoe_attack['name']}.")
+
+                    command_list.append(f'{ctx.prefix}i n')
+                    return
+        ### AoE ###
+
         chosen_target = find_best_target(monster, targets)
         target_combatant = c.get_combatant(chosen_target)
         if not target_combatant:
@@ -494,8 +831,6 @@ def process_monster_turn(indexed_combatant, targets, c, out, overlays, desc, com
             map_url = mapl.generate_map_image(overlays)
             command_list.append(f'{pref}embed -title "Monster Turn: {monster.name}" -desc "Monster is deciding its action..." -image "{map_url}" -footer "{footer}"')
 
-            monster_size_mod = mapl.get_size_mod(monster_map_data.get('size', 'M'))
-            occupied_positions = mapl.get_occupied_coords(monster.name, monster_size_mod)
             # occupied_positions = set(out[name].get('location') for name in out if 'location' in out[name])
             
             # Spellcasting logic
