@@ -50,7 +50,7 @@ command = f"""multiline{nl}"""
 
 c = combat()
 
-if not c:
+if not c or inp == 'help' or inp == '?':
     title = f'{cmd} works best when used with a combat initiative full of player characters and monsters!'
     desc = 'Please start initiative and add your players and  monsters.'
     return f'embed -title "{title}" -desc "{desc_text}" -footer "{footer}"'
@@ -830,8 +830,8 @@ def process_monster_turn(indexed_combatant, targets, c, out, overlays, desc, com
             # Before moving, display the map
             map_state["combatants"] = out
             toggle_monster_color(monster, 'p')
-            map_url = mapl.generate_map_image(overlays)
-            command_list.append(f'{pref}embed -title "Monster Turn: {monster.name}" -desc "Monster is deciding its action..." -image "{map_url}" -footer "{footer}"')
+            # map_url = mapl.generate_map_image(overlays)
+            # command_list.append(f'''{pref}embed -title "Monsters are deciding their actions..." -image "{map_url}" -footer "{footer}"''')
 
             monster_size_mod = mapl.get_size_mod(monster_map_data.get('size', 'M'))
             occupied_positions = mapl.get_occupied_coords(monster.name, monster_size_mod)
@@ -1060,184 +1060,193 @@ desc = []
 ###### TEST SUITES ######
 
 # Main code execution starts here
-if not (inp == 'help' or inp == '?'):
-    if c:
-        if inp1.lower() in 'map' and inp2.lower() in 'list':
-            # Generate the list of map options
-            presets_embeds = presets.generate_list_embeds(footer)
-            command_list += presets_embeds
-            return command + nl.join(command_list)
 
-        if inp1.lower() in 'map':
-            map_subtext = inp2
-            success, message = load_specific_map(map_subtext)
-            if success:
-                # Generate the updated map image
-                map_url = mapl.generate_map_image()
-                command_list.append(f'{pref}embed -title "Map Updated" -desc "{message}" -image "{map_url}" -footer "{footer}"')
-            else:
-                command_list.append(f'{pref}embed -title "Map Setup Pending:" -desc "{message}" -footer "{footer}"')
-            
+if inp1.lower() in 'map':
+    if inp2.lower() in 'list':
+        # Generate the list of map options
+        presets_embeds = presets.generate_list_embeds(footer)
+        command_list += presets_embeds
+        return command + nl.join(command_list)
+    map_subtext = inp2
+    success, message = load_specific_map(map_subtext)
+    if success:
+        # Generate the updated map image
+        map_url = mapl.generate_map_image()
+        command_list.append(f'{pref}embed -title "Map Updated" -desc "{message}" -image "{map_url}" -footer "{footer}"')
+    else:
+        command_list.append(f'{pref}embed -title "Map Setup Pending:" -desc "{message}" -footer "{footer}"')
+    
+    command += nl.join(command_list)
+    return command
+
+cname_list += [co.name for co in combatants]
+monst_list = []
+targets = []
+
+for i in combatants:
+    if i.monster_name and i not in monst_list and autolib.isMonster(i):
+        monst_list.append(i.name)
+        monst_name_list.append(i.monster_name)
+
+targets = [x for x in cname_list if x not in monst_list]
+if targets:
+    for i in targets[:]:
+        if i.casefold() in ['map', 'dm', 'lair']:
+            targets.remove(i)
+        elif autolib.isGhost(c, i):
+            targets.remove(i)
+if not targets:
+    err(f'No playable characters found within Combat Initiative to target!\n\nPlease join the combat initiative using `{pref}i join` or remove ghost effect from characters')
+
+map_combatant = mapl.mapPresent()
+map_initialized = False
+
+if map_combatant:
+    for attack in map_combatant.attacks:
+        if attack.name == 'map':
+            map_initialized = True
+            break
+
+# Check if map is present, if not, add it to the command list
+if not map_combatant:
+    command_list.append(f'{pref}i add 0 Map -p 20')
+    command_list.append(f'{pref}embed -title "Map Attached!" -desc "> *Note*: `{cmd}` now comes with a new update integrating OTFBM map-based combat with a full AI battle engine! If you\'d still like to use the old legacy version without maps support, worry not, it is still live on:\n> `{pref}autol`\n> (`l` stands for legacy)\n\n__**Suggested Actions**__:\n\nChoose from one of the many map presets:\n`{cmd} map list`\n\n### __Quick Setup Tips__\n**Small-size close-quarters map**:\n`{cmd} map pit`\n\n**Medium-size map**:\n`{cmd} map winter`\n`{cmd} map sky`\n`{cmd} map silent`\n\n**Large-size Map**:\n`{cmd} map light`\n\n**Load a random map preset:**\n`{cmd}`\n\n__Note__: Using any of the above quick setup commands will auto-magically add all players and monsters currently in the combat initiative to either end of the map.\n\n:warning: Make sure to add all the players and monsters to combat initiative before loading the map with one of the above commands for a seamless assignment of combat positions." -color <color> -footer "{footer}"')
+    command += nl.join(command_list)
+    return command
+if not map_initialized:
+    # Randomly select a map preset
+    random_map_name, random_map_data = randchoice(list(presets.map_presets.items()))
+    mapsize = random_map_data["size"]
+    mapbg = random_map_data["image"]
+    mapoptions = random_map_data["cell_pixel"]
+    walls = objects = mapviewlocation = mapviewsize = ''
+
+    map_combatant = mapl.mapPresent()
+
+    if not map_combatant:
+        missing_map_warning = f'Map init object missing!\n\nPlease add a map object to combat using:\n```{pref}i add 0 Map -p 20```'
+        return f"""embed -title "Map Missing!" -desc "{missing_map_warning}" -footer "{footer}" """
+
+    neweffect = f"Size: {mapsize} ~ Background: {mapbg} ~ Options: {mapoptions}"
+
+    # Update the map effect on the map combatant
+    map_combatant.add_effect('map', attacks=[{"attack":{"name":"map","automation":[{"type":"text","text":neweffect}],"_v":2}}])
+
+    # Update map_state with the new size
+    map_state["size"] = mapsize
+
+    place_combatants([c for c in combatants if autolib.isMonster(c) and c.name.lower() not in ['dm', 'map', 'lair']], True)
+    place_combatants([c for c in combatants if not autolib.isMonster(c) and c.name.lower() not in ['dm', 'map', 'lair']], False)
+    bool_result, map_status = mapl.attach_map_to_combatant(map_state)
+    if not bool_result:
+        return f"""embed -title "Map Missing!" -desc "{map_status}" -footer "{footer}" """
+    map_url = mapl.generate_map_image()
+    command_list.append(f'{pref}embed -title "Map Initialized: {random_map_name.title()}" -desc "Combat positions assigned.\n\n**Map-Art Courtesy of**:\n[2-Minute Tabletop](https://2minutetabletop.com/) under the [CC BY-NC 4.0 License](https://creativecommons.org/licenses/by-nc/4.0/)" -image "{map_url}" -footer "{footer}"')
+
+
+current_init = None if not c.current else c.current.name
+
+if current_init is None:
+    title = f'Booting up ancient artificial intelligences! :robot:'
+    if monst_list:
+        desc_text = f'\n:robot: _Auto-attack sequence initiated!_\n\nAutomating the following monsters:\n**{comma.join(monst_list)}**\n\n**Use `{cmd}` again now to automate all monsters in combat!**'
+        command_list.append(f'{pref}i n')
+    else:
+        desc_text = f'_No monsters found in initiative!_\n\nThat\'s fine, feel free to add them any time and run `{cmd}` every time it\'s the monster\'s turn!'
+    if not map_combatant:
+        command_list.append(f'{pref}i add 0 Map -p 20')
+    command_list.append(f"""{pref}embed -title "{title}" -desc "{desc_text}" -footer '{footer}'""")
+    command += nl.join(command_list)
+    return command
+    
+if current_init in monst_list and not autolib.hasMonsterGroup(c):
+    indexed_cname_list = []
+    curr_combatant = c.current
+    
+    map_url = mapl.generate_map_image(overlays)
+    command_list.append(f'''{pref}embed -title "Monsters are deciding their actions..." -image "{map_url}" -footer "{footer}"''')
+    
+    if inp == 'once':
+        # Implement the 'once' sub-command
+        if current_init in monst_list:
+            process_monster_turn(current_init, targets, c, out, overlays, desc, command_list)
+            # Update map_state["combatants"] with 'out'
+            map_state["combatants"] = out
+            if overlays:
+                map_url = mapl.generate_map_image(overlays)
+                map_embed = f'{pref}embed -title "Updated Map" -desc "Monster movements displayed" -image "{map_url}" -footer "{footer}"'
+                command_list.append(map_embed)
             command += nl.join(command_list)
             return command
+        
+    # Build the indexed list starting from current initiative
+    # Sort the combatants by initiative (descending) and then by name
+    combatants_in_order = c.combatants
+    cname_list_sorted = [combatant.name for combatant in combatants_in_order]
 
-        for combatant in combatants:
-            cname_list.append(combatant.name)
-        targets = []
-        monst_list = []
+    indexed_cname_list = cname_list_sorted[cname_list_sorted.index(current_init):] + cname_list_sorted[:cname_list_sorted.index(current_init)]
 
-        for i in combatants:
-            if i.monster_name and i not in monst_list and autolib.isMonster(i):
-                monst_list.append(i.name)
-                monst_name_list.append(i.monster_name)
+    if len(indexed_cname_list) > 4:
+        indexed_cname_list = indexed_cname_list[:4]
 
-        targets = [x for x in cname_list if x not in monst_list]
-        if targets:
-            for i in targets[:]:
-                if i.casefold() in ['map', 'dm', 'lair']:
-                    targets.remove(i)
-                elif autolib.isGhost(c, i):
-                    targets.remove(i)
-        if not targets:
-            err(f'No playable characters found within Combat Initiative to target!\n\nPlease join the combat initiative using `{pref}i join` or remove ghost effect from characters')
-
-        map_combatant = mapl.mapPresent()
-        map_initialized = False
-
-        if map_combatant:
-            for attack in map_combatant.attacks:
-                if attack.name == 'map':
-                    map_initialized = True
-                    break
-
-        # Check if map is present, if not, add it to the command list
-        if not map_combatant:
-            command_list.append(f'{pref}i add 0 Map -p 20')
-            command_list.append(f'{pref}embed -title "Map Attached!" -desc "> *Note*: `{cmd}` now comes with a new update integrating OTFBM map-based combat with a full AI battle engine! If you\'d still like to use the old legacy version without maps support, worry not, it is still live on:\n> `{pref}autol`\n> (`l` stands for legacy)\n\n__**Suggested Actions**__:\n\nChoose from one of the many map presets:\n`{cmd} map list`\n\n### __Quick Setup Tips__\n**Small-size close-quarters map**:\n`{cmd} map pit`\n\n**Medium-size map**:\n`{cmd} map winter`\n`{cmd} map sky`\n`{cmd} map silent`\n\n**Large-size Map**:\n`{cmd} map light`\n\n**Load a random map preset:**\n`{cmd}`\n\n__Note__: Using any of the above quick setup commands will auto-magically add all players and monsters currently in the combat initiative to either end of the map.\n\n:warning: Make sure to add all the players and monsters to combat initiative before loading the map with one of the above commands for a seamless assignment of combat positions." -color <color> -footer "{footer}"')
-            command += nl.join(command_list)
-            return command
-        if not map_initialized:
-            # Randomly select a map preset
-            random_map_name, random_map_data = randchoice(list(presets.map_presets.items()))
-            mapsize = random_map_data["size"]
-            mapbg = random_map_data["image"]
-            mapoptions = random_map_data["cell_pixel"]
-            walls = objects = mapviewlocation = mapviewsize = ''
-
-            map_combatant = mapl.mapPresent()
-
-            if not map_combatant:
-                missing_map_warning = f'Map init object missing!\n\nPlease add a map object to combat using:\n```{pref}i add 0 Map -p 20```'
-                return f"""embed -title "Map Missing!" -desc "{missing_map_warning}" -footer "{footer}" """
-
-            neweffect = f"Size: {mapsize} ~ Background: {mapbg} ~ Options: {mapoptions}"
-
-            # Update the map effect on the map combatant
-            map_combatant.add_effect('map', attacks=[{"attack":{"name":"map","automation":[{"type":"text","text":neweffect}],"_v":2}}])
-
-            # Update map_state with the new size
-            map_state["size"] = mapsize
-
-            place_combatants([c for c in combatants if autolib.isMonster(c) and c.name.lower() not in ['dm', 'map', 'lair']], True)
-            place_combatants([c for c in combatants if not autolib.isMonster(c) and c.name.lower() not in ['dm', 'map', 'lair']], False)
-            bool_result, map_status = mapl.attach_map_to_combatant(map_state)
-            if not bool_result:
-                return f"""embed -title "Map Missing!" -desc "{map_status}" -footer "{footer}" """
-            map_url = mapl.generate_map_image()
-            command_list.append(f'{pref}embed -title "Map Initialized: {random_map_name.title()}" -desc "Combat positions assigned.\n\n**Map-Art Courtesy of**:\n[2-Minute Tabletop](https://2minutetabletop.com/) under the [CC BY-NC 4.0 License](https://creativecommons.org/licenses/by-nc/4.0/)" -image "{map_url}" -footer "{footer}"')
-
-
-        if c.current:
-            current_init = c.current.name
-        else:
-            current_init = None
-
-        if current_init is None:
-            title = f'Booting up ancient artificial intelligences! :robot:'
-            if monst_list:
-                desc_text = f'\n:robot: _Auto-attack sequence initiated!_\n\nAutomating the following monsters:\n**{comma.join(monst_list)}**\n\n**Use `{cmd}` again now to automate all monsters in combat!**'
-                command_list.append(f'{pref}i n')
-            else:
-                desc_text = f'_No monsters found in initiative!_\n\nThat\'s fine, feel free to add them any time and run `{cmd}` every time it\'s the monster\'s turn!'
-            if not map_combatant:
-                command_list.append(f'{pref}i add 0 Map -p 20')
+    for indexed_combatant in indexed_cname_list:
+        if len(command_list) > 12:
+            title = f'Whoa! You\'re pushing the limits of Avrae right now!'
+            desc_text = f'Unfortunately, this is the maximum number of attacks you can automate to prevent unnecessarily over-stressing Avrae!\n\n**But no worries, you can simply use `{cmd}` again now to repeat the cycle!**'
+            while len(command_list) > 12:
+                command_list.reverse()
+                last_n = command_list.index(f'{pref}i n')
+                command_list = command_list[last_n+1:]
+                command_list.reverse()
+            command_list.append(f'{pref}i n')
             command_list.append(f"""{pref}embed -title "{title}" -desc "{desc_text}" -footer '{footer}'""")
             command += nl.join(command_list)
             return command
+        if indexed_combatant in monst_list:
+            monster = c.get_combatant(indexed_combatant)    
+            note = mapl.parse_note(monster.note)
 
-        if current_init in monst_list and not autolib.hasMonsterGroup(c):
-            indexed_cname_list = []
-            curr_combatant = c.current
-
-            # Build the indexed list starting from current initiative
-            # Sort the combatants by initiative (descending) and then by name
-            combatants_in_order = c.combatants
-            cname_list_sorted = [combatant.name for combatant in combatants_in_order]
-
-            indexed_cname_list = cname_list_sorted[cname_list_sorted.index(current_init):] + cname_list_sorted[:cname_list_sorted.index(current_init)]
-
-            if len(indexed_cname_list) > 4:
-                indexed_cname_list = indexed_cname_list[:4]
-
-            for indexed_combatant in indexed_cname_list:
-
-                if len(command_list) > 12:
-                    title = f'Whoa! You\'re pushing the limits of Avrae right now!'
-                    desc_text = f'Unfortunately, this is the maximum number of attacks you can automate to prevent unnecessarily over-stressing Avrae!\n\n**But no worries, you can simply use `{cmd}` again now to repeat the cycle!**'
-                    while len(command_list) > 12:
-                        command_list.reverse()
-                        last_n = command_list.index(f'{pref}i n')
-                        command_list = command_list[last_n+1:]
-                        command_list.reverse()
-                    command_list.append(f'{pref}i n')
-                    command_list.append(f"""{pref}embed -title "{title}" -desc "{desc_text}" -footer '{footer}'""")
-                    command += nl.join(command_list)
-                    return command
-                if indexed_combatant in monst_list:
-                    monster = c.get_combatant(indexed_combatant)    
-                    note = mapl.parse_note(monster.note)
-
-                    if not note or not 'location' in note:
-                        process_map_absentee_monster_turn(indexed_combatant, command_list)
-                    else:
-                        process_monster_turn(indexed_combatant, targets, c, out, overlays, desc, command_list)
-                        toggle_monster_color(monster, 'r')
-                else:
-                    # Handle non-monster combatants
-                    if indexed_combatant.casefold() in ['map', 'dm', 'lair'] and c.get_combatant(indexed_combatant).init == 20:
-                        title = f'Automation Complete! Waiting on Lair Action :dragon:'
-                        desc_text = f'Use `{pref}i n` if there are no actions to take this round!'
-                    elif inp1.lower() in 'react':
-                        command_list.pop()
-                        title = f'Automation Complete! Pausing to allow player reaction! :mage:'
-                        desc_text = f'After taking any reaction use `{pref}i n`'
-                    else:
-                        title = f'Automation Complete! It\'s a player turn now! :mage:'
-                        desc_text = f'Waiting on **{indexed_combatant}** to play their turn!'
-                    command_list.append(f"""{pref}embed -title "{title}" -desc "{desc_text}" -footer '{footer}'""")
-                    break
-
-            # Update map_state["combatants"] with 'out'
-            map_state["combatants"] = out
-
-
-            if overlays:
-                map_url = mapl.generate_map_image(overlays)
-                map_embed = f'{pref}embed -title "Monster Movement Summary" -desc "Monster movements so far:" -image "{map_url}" -footer "{footer}"'
-                command_list.append(map_embed)
-
-            command += nl.join(command_list)
-            return command
-
-        else:
-            # It's a player's turn
-            if current_init.casefold() in ['map', 'dm', 'lair'] and c.turn_num == 20:
-                title = f'Waiting on Lair Action :dragon:'
-                desc_text = f'Use `{pref}i n` if there are no actions to take this round!'
+            if not note or not 'location' in note:
+                process_map_absentee_monster_turn(indexed_combatant, command_list)
             else:
-                title = f'It\'s a player turn! :mage:'
-                if not get_uvar('mapStates'):
-                    desc_text = f"""
+                process_monster_turn(indexed_combatant, targets, c, out, overlays, desc, command_list)
+                toggle_monster_color(monster, 'r')
+        else:
+            # Handle non-monster combatants
+            if indexed_combatant.casefold() in ['map', 'dm', 'lair'] and c.get_combatant(indexed_combatant).init == 20:
+                title = f'Automation Complete! Waiting on Lair Action :dragon:'
+                desc_text = f'Use `{pref}i n` if there are no actions to take this round!'
+            elif inp1.lower() in 'react':
+                command_list.pop()
+                title = f'Automation Complete! Pausing to allow player reaction! :mage:'
+                desc_text = f'After taking any reaction use `{pref}i n`'
+            else:
+                title = f'Automation Complete! It\'s a player turn now! :mage:'
+                desc_text = f'Waiting on **{indexed_combatant}** to play their turn!'
+            command_list.append(f"""{pref}embed -title "{title}" -desc "{desc_text}" -footer '{footer}'""")
+            break
+
+    # Update map_state["combatants"] with 'out'
+    map_state["combatants"] = out
+
+
+    if overlays:
+        map_url = mapl.generate_map_image(overlays)
+        map_embed = f'{pref}embed -title "Monster Movement Summary" -desc "Monster movements so far:" -image "{map_url}" -footer "{footer}"'
+        command_list.append(map_embed)
+
+    command += nl.join(command_list)
+    return command
+
+
+# It's a player's turn
+if current_init.casefold() in ['map', 'dm', 'lair'] and c.turn_num == 20:
+    title = f'Waiting on Lair Action :dragon:'
+    desc_text = f'Use `{pref}i n` if there are no actions to take this round!'
+else:
+    title = f'It\'s a player turn! :mage:'
+    if not get_uvar('mapStates'):
+        desc_text = f"""
 Waiting on **{current_init}** to play their turn!
 
 To move your player character on the map:
@@ -1255,40 +1264,8 @@ To move your player character on the map:
    ```
    (Replace "C4" with the cell address of your desired location on the map.)
 """
-                else:
-                    desc_text = f"Waiting on **{current_init}** to play their turn!"
+    else:
+        desc_text = f"Waiting on **{current_init}** to play their turn!"
 
-            return f"""embed -title "{title}" -desc "{desc_text}" -footer "{footer}" """
-
-    elif inp in 'once':
-        if c:
-            # Implement the 'once' sub-command
-            if current_init in monst_list:
-                process_monster_turn(current_init, targets, c, out, overlays, desc, command_list)
-                # Update map_state["combatants"] with 'out'
-                map_state["combatants"] = out
-                if overlays:
-                    map_url = mapl.generate_map_image(overlays)
-                    map_embed = f'{pref}embed -title "Updated Map" -desc "Monster movements displayed" -image "{map_url}" -footer "{footer}"'
-                    command_list.append(map_embed)
-                command += nl.join(command_list)
-                return command
-            else:
-                # It's a player's turn
-                if current_init.casefold() in ['map', 'dm', 'lair'] and c.turn_num == 20:
-                    title = f'Waiting on Lair Action :dragon:'
-                    desc_text = f'Use `{pref}i n` if there are no actions to take this round!'
-                else:
-                    title = f'It\'s a player turn! :mage:'
-                    desc_text = f'Waiting on **{current_init}** to play their turn!'
-                return f"""embed -title "{title}" -desc "{desc_text}" -footer "{footer}" """
-        else:
-            title = 'You need to be within **combat initiative** in this channel to use this alias!'
-            desc_text = help_text
-
-elif inp in 'help?':
-    title = help_title
-    desc_text = help_text
-
-return (f'embed -title "{title}" -desc "{desc_text}" -footer "{footer}"')
+return f'''embed -title "{title}" -desc "{desc_text}" -footer "{footer}"'''
 </drac2>
