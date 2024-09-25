@@ -89,18 +89,27 @@ def attach_map_to_combatant(map_state):
 
 
 def get_all_map_combatants():
-    return {
-        co.name: parse_note(co.note)
-        for co in c.combatants
-        if co.name.lower() not in ["map", "dm", "lair"]
-    }
+    map_combatants = {}
+    for co in c.combatants:
+        if co.name.lower() not in ["map", "dm", "lair"]:
+            note = parse_note(co.note)
+            if "location" in note:
+                note["pos"] = loc_to_coords(note["location"])
+                # note["size"] = get_size_mod(note.get("size", "M"))
+                note["size"] = note.get("size", "M")
+                map_combatants[co.name] = note
+    return map_combatants
 
 
 def generate_map_image(overlays=None):
     map_url = f"{get('otfbm_base_url', 'http://otfbm.io/')}"
 
     # Get the latest map info from the map combatant
-    map_info, _ = get_map_info()
+    map_info = {}
+    for combatant in c.combatants:
+        for effect in combatant.effects:
+            if effect.name == "map":
+                map_info = parse_map_info(effect.attacks[0].attack.automation[0].text)
 
     # Use the stored map options or defaults
     cell_size = map_info.get("options", get("mapOptions", ""))
@@ -244,9 +253,13 @@ def out_box(top_left, size=0, include_inner=False):
     return box(out_top_left, size + 2, include_inner)
 
 
-def melee_box(size1, c2, size2):
-    move_top_left = subtract_coords(c2, [size1 + 1, size1 + 1])
-    return box(move_top_left, size1 + size2 + 2)
+# Sorts by distance if C1 is not None
+def melee_box(size1, c2, size2, c1=None, mask=[]):
+    top_left = subtract_coords(c2, [size1 + 1, size1 + 1])
+    melee_box = [c for c in box(top_left, size1 + size2 + 2) if (c not in mask)]
+    if c1:
+        melee_box.sort(key=lambda c: distance(c1, c))
+    return melee_box
 
 
 def occupied_box(size1, c2, size2):
@@ -278,7 +291,6 @@ def get_occupants(my_name="", my_size=0):
             occupants[name] = {
                 "pos": pos,
                 "size": size,
-                "box": occupied_box(my_size, pos, size),
             }
     return occupants
 
