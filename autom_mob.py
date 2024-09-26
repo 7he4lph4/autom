@@ -27,11 +27,11 @@ def get_monster_data(monster_name, data_needed=None):
 
 def fetch_and_store_monster_data():
     monster_data = {}
-    for combatant in c.combatants:
-        if combatant.monster_name:
-            full_data = get_monster_data(combatant.monster_name, None)
-            if full_data:
-                monster_data[combatant.name] = full_data
+    monster_names = list(set([c.monster_name for c in c.combatants if c.monster_name]))
+    for monster in monster_names:
+        full_data = get_monster_data(monster, None)
+        if full_data:
+            monster_data[monster] = full_data
 
     # Store the data in combat metadata
     c.set_metadata("monster_data", dump_json(monster_data))

@@ -70,8 +70,23 @@ if inp1.lower() == 'lair':
 combatants = c.combatants
 combatant_list, party_list, monster_list = targl.get_target_lists()
 
+party_names = [p.name for p in party_list]
+monster_names, monster_types = [], []
+for mon in monster_list:
+    monster_names.append(mon.name)
+    monster_types.append(mon.monster_name)
+
 # Map-related variables
 alph = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+size_map = {
+    'Tiny': ('T', 1),
+    'Small': ('S', 1),
+    'Medium': ('M', 1),
+    'Large': ('L', 2),
+    'Huge': ('H', 3),
+    'Gargantuan': ('G', 4)
+}
+size_dict = {"T": "Tiny", "S": "Small", "M": "Medium", "L": "Large", "H": "Huge", "G": "Gargantuan"}
 map_base_url = get("otfbm_base_url", "http://otfbm.io/")
 map_state = {"current_map": None, "size": None, "bg_image": None}
 mapsize = get("mapSize", "20x20")
@@ -110,89 +125,66 @@ if not map_attach:
         
 occupied_positions = set()
 map_combatants = mapl.get_all_map_combatants()
+placed, unplaced = mapl.get_placed_combatants()
 
-def place_combatants(combatants, is_monster):
+def place_combatants():
+    size_groups = {"G": [], "H": [], "L": [], "M": []}
+    for upc, data in unplaced.items():
+        size = data.get("size")
+        if not size:
+            size = "M"
+            if upc.monster_name:
+                mon_data = mobl.get_monster_data(upc.monster_name, 'meta')
+                size = mon_data.split()[0] if mon_data else size
+            data.update({"size": size, "size_mod": mapl.get_size_mod(size)})
+        (size_groups[size[0]] if size[0] in "GHL" else size_groups["M"]).append(upc)
+       
     width, height = mapl.parse_mapsize(map_state.get("size"))
     
-    if is_monster:
-        x_range = range(width // 2 + 1, width + 1)
-    else:
-        x_range = range(1, width // 2 + 1)
-    
-    y_range = range(1, height + 1)
-    for combatant in combatants:
-        if typeof(combatant) == "SimpleGroup":
-            place_combatants(combatant.combatants, is_monster)
-        elif combatant.name.lower() not in ['dm', 'map', 'lair']:
-            out[combatant.name] = out.get(combatant.name, {})
+    player_side = 0
+    players_x = [placed[p]["pos"][0] for p in placed if not autolib.isMonster(p)]
+    if 0 < len(players_x):
+        player_side = round((sum(players_x) / len(players_x)) / (width - 1))
+    for sg, unplaced_c in size_groups.items():
+        if len(unplaced_c) < 1:
+            continue
+        size_mod = mapl.get_size_mod(sg)
+        occupied_grid = {x: [] for x in range(0, width - size_mod)}
+        for p, data in placed.items():
+            mapl.update_occupied(occupied_grid, size_mod, data, width, height)
+        sides = {
+            0: range(width // 2 - size_mod - 1, -1, -1),
+            1: range(width // 2, width - size_mod)
+        }
+        y_range = list(range(1, height - size_mod + 1))
+        for upc in unplaced_c:
+            is_monster = autolib.isMonster(upc)
+            side = player_side if not is_monster else 1 - player_side
+            side_cols = [x for x in sides[side] if x in occupied_grid]
+            if not side_cols:
+                side_cols = [x for x in sides[1 - side] if x in occupied_grid][0:1]
+                if not side_cols:
+                    continue
+            x = randchoice(side_cols)
+            y = randchoice([ry for ry in y_range if ry not in occupied_grid[x]])
             
-            # Mapping size categories to size letters and grid sizes
-            size_map = {
-                'Tiny': ('T', 1),
-                'Small': ('S', 1),
-                'Medium': ('M', 1),
-                'Large': ('L', 2),
-                'Huge': ('H', 3),
-                'Gargantuan': ('G', 4)
-            }
+            placed[upc] = {"pos": (x, y), "size": sg, "size_mod": size_mod}
+            mapl.update_occupied(occupied_grid, size_mod, placed[upc], width, height)
             
-            # Fetch the monster's size from the custom database
-            if combatant.monster_name:
-                mon_size = mobl.get_monster_data(combatant.monster_name, 'meta')
-                if mon_size:
-                    mon_size = mon_size.split()[0]
-                else:
-                    mon_size = 'Medium'
-            else:
-                # Default to 'Medium' size for player characters
-                mon_size = 'Medium'
+            location = mapl.coords_to_loc([x, y])
+            out[upc.name] = out.get(upc.name, {})
+            out[upc.name]['location'] = location
+            out[upc.name]['size'] = sg
+            out[upc.name]['color'] = 'r' if is_monster else 'b'
             
-            # Get size letter and grid size
-            size_info = size_map.get(mon_size, ('M', 1))
-            size_letter, mon_size_grid = size_info
-            
-            position_found = False
-            attempts = 0
-            max_attempts = 100  # To prevent infinite loops
-            while not position_found and attempts < max_attempts:
-                x = randchoice(x_range)
-                y = randchoice(y_range)
-                position_clear = True
-                for dx in range(mon_size_grid):
-                    for dy in range(mon_size_grid):
-                        pos = (x + dx, y + dy)
-                        if pos in occupied_positions or x + dx > width or y + dy > height:
-                            position_clear = False
-                            break
-                    if not position_clear:
-                        break
-                if position_clear:
-                    for dx in range(mon_size_grid):
-                        for dy in range(mon_size_grid):
-                            occupied_positions.add((x + dx, y + dy))
-                    
-                    # Add safeguard for x value
-                    x = max(1, min(x, len(alph)))
-                    location = f"{alph[x-1]}{y}"
-                    
-                    out[combatant.name]['location'] = location
-                    position_found = True
-                attempts += 1
-            if not position_found:
-                err(f"Could not place {combatant.name} on the map without overlapping.")
-            
-            # Set size letter
-            out[combatant.name]['size'] = size_letter
-            
-            # Set color
-            out[combatant.name]['color'] = 'r' if is_monster else 'g'
-            
-            # Add note to the combatant without Tokensize
-            note = (f"Location: {location} | Color: {out[combatant.name]['color']} | "
-                    f"Size: {size_letter} ({mon_size})")
-            combatant.set_note(note)
+            upc.set_note(
+                f"Location: {location} | Color: {out[upc.name]['color']} | Size: {sg} ({size_dict[sg]})"
+            )
             map_state["combatants"] = map_state.get("combatants", {})
             map_state["combatants"].update(out)
+            unplaced.pop(upc)
+        # if unplaced:
+        #     err(f"Could not place {combatant.name} on the map without overlapping.")
 
 def load_specific_map(map_name):
     map_name, map_data, matches = presets.find_map_by_subtext(map_name)
@@ -212,8 +204,7 @@ def load_specific_map(map_name):
     map_attach.add_effect('map', attacks=[{"attack":{"name":"map","automation":[{"type":"text","text":neweffect}],"_v":2}}])
     
     # Attach the updated map to the combatant
-    place_combatants(monster_list, True)
-    place_combatants(party_list, False)
+    place_combatants()
     
     base_message = f"`{map_name}` map loaded successfully. Combat positions assigned.\n\n**Map-Art Courtesy of**:\n[2-Minute Tabletop](https://2minutetabletop.com/) under the [CC BY-NC 4.0 License](https://creativecommons.org/licenses/by-nc/4.0/)"
     if len(matches) > 1:
@@ -227,7 +218,14 @@ if inp1.lower() in ['m', 'map']:
 elif not map_info:
     message = load_specific_map(randchoice(list(presets.map_presets.keys())))
     return f'embed {message} -footer "{footer}"'
+else:
+    map_state["size"] = map_info["size"]
+    map_state["mapoptions"] = map_info["options"]
+    map_state["bg_image"] = map_info["background"]
 
+if unplaced:
+    place_combatants()
+    command_list.append(f'{pref}embed -title "Map Setup Complete!" -desc "All combatants have been placed on the map." -footer "{footer}"')
 
 # MAP INITIALIZATION COMPLETE
 
@@ -494,7 +492,6 @@ def move_towards(start, end, distance, occupied_positions):
     ratio = min(distance / total_distance, 1) if 0 < total_distance else 0
     move_coords = mapl.add_coords(start_pos, mapl.scale_coords(dxy, ratio))
     new_location = mapl.coords_to_loc(move_coords)
-
     # Check if the new location is occupied
     if new_location in occupied_positions:
         new_location = find_nearest_unoccupied_position(start, end, occupied_positions)
@@ -677,7 +674,7 @@ def process_monster_turn(indexed_combatant, targets, c, out, overlays, desc, com
     if monster.hp <= 0:
         remove_dead_monster(c, monster, out, desc)
         map_url = mapl.generate_map_image(overlays)
-        command_list.append(f'{pref}embed -title "Skipping dead monster: {monster_name}" -desc "{monster_name} has been defeated and removed from the map. Its turn will be skipped." -image "{map_url}" -footer "{footer}"')
+        command_list.append(f'{pref}embed -title "Skipping dead monster: {monster.name}" -desc "{monster.name} has been defeated and removed from the map. Its turn will be skipped." -image "{map_url}" -footer "{footer}"')
         command_list.append(f'{pref}i n')  # Skip to next turn
         return
 
@@ -711,7 +708,7 @@ def process_monster_turn(indexed_combatant, targets, c, out, overlays, desc, com
                 end_pos = mapl.loc_to_coords(best_position)
                 distance_to_position = mapl.distance(start_pos, end_pos) * 5
 
-                monster_speed = mobl.get_monster_speed(monster_name)
+                monster_speed = mobl.get_monster_speed(monster_name)[0]
 
                 # Move the monster if needed
                 if distance_to_position > 0:
@@ -767,7 +764,6 @@ def process_monster_turn(indexed_combatant, targets, c, out, overlays, desc, com
         target_location = target_map_data.get('location', None)
         target_size_mod = mapl.get_size_mod(target_map_data.get('size', 'M'))
 
-        command_list.append(f'AAAAAAAAAAAAAHHHHHHHHHHH')
         if target_location:
             start_pos = mapl.loc_to_coords(monster_location)
             monster_box = mapl.box(start_pos, monster_size_mod)
@@ -852,7 +848,6 @@ def process_monster_turn(indexed_combatant, targets, c, out, overlays, desc, com
                 if move_distance < distance - max_attack_reach:                  
                     # Monster needs to dash
                     move_distance = min(monster_speed * 2, distance - max_attack_reach)
-                    
                     map_size = mapl.parse_mapsize(mapl.get_map_info()[0].get("size"))
                     # circle = mapl.circle(start_pos, (monster_speed * 2) / 5, bounds=[0, 1, map_size[0], map_size[1]])
                     # for oco, oco_info in occupants.items():
@@ -862,6 +857,7 @@ def process_monster_turn(indexed_combatant, targets, c, out, overlays, desc, com
                     #       oc_melee = [p for p in oco_info.melee if mapl.distance(p, start_pos) * 5 <= move_distance]    
 
                     new_location, arrow = move_towards(monster_location, target_location, move_distance, occupied_positions)
+                    #command_list.append(f"{pref}echo DISTANCEEEE: {new_location}")
                     update_monster_position(monster, new_location)
                     occupied_positions.add(new_location)
                     if arrow:
@@ -913,7 +909,6 @@ def process_monster_turn(indexed_combatant, targets, c, out, overlays, desc, com
 
     # Attack logic
     
-    # command_list.append(f"{pref}echo DISTANCEEEE: {distance}")
     if distance <= get_max_attack_reach(monster.attacks) and (curr_hp > 0 or autolib.onDeath(indexed_combatant, c.combatants) == "relentless"):
         # Multiattack logic
         mon_actions = autolib.getActions(monster_name, autolib.buildDB())
@@ -988,11 +983,6 @@ targets = [t.name for t in party_list if not autolib.isGhost(c, t)]
 if not targets:
     err(f'No playable characters found within Combat Initiative to target!\n\nPlease join the combat initiative using `{pref}i join` or remove ghost effect from characters')
 
-party_names = [p.name for p in party_list]
-monster_names, monster_types = [], []
-for mon in monster_list:
-    monster_names.append(mon.name)
-    monster_types.append(mon.monster_name)
 
 if c.current is None:
     title = f'Booting up ancient artificial intelligences! :robot:'

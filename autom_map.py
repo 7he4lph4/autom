@@ -184,6 +184,49 @@ def generate_map_image(overlays=None):
     return map_url
 
 
+# Placement Functions
+
+
+def get_placed_combatants():
+    placed, unplaced = {}, {}
+
+    def process_map_combatant(combatant):
+        data = parse_note(combatant.note)
+        if "location" in data:
+            data["pos"] = loc_to_coords(data["location"])
+            data["size_mod"] = get_size_mod(data.get("size", "M"))
+            return data, True
+        return data, False
+
+    for co in c.combatants:
+        if typeof(co) == "SimpleGroup":
+            for gco in co.combatants:
+                data, p = process_map_combatant(gco)
+                (placed if p else unplaced)[gco] = data
+        elif co.name.lower() not in ["map", "dm", "lair"]:
+            data, p = process_map_combatant(co)
+            (placed if p else unplaced)[co] = data
+    return placed, unplaced
+
+
+def update_occupied(occupied_grid, space_mod, data, width, height):
+    top = (data["pos"][0] - space_mod, data["pos"][1] - space_mod)
+    occupied_y = list(
+        range(
+            max(top[1], 1),
+            min(top[1] + data["size_mod"] + space_mod + 1, height - space_mod + 1),
+        )
+    )
+    for x in range(
+        max(top[0], 0),
+        min(data["pos"][0] + data["size_mod"] + 1, width - space_mod),
+    ):
+        if x in occupied_grid:
+            occupied_grid[x] = list(set(occupied_grid[x] + occupied_y))
+            if height - space_mod <= len(occupied_grid[x]):
+                occupied_grid.pop(x)
+
+
 # Coordinate Functions
 
 
@@ -196,9 +239,13 @@ def loc_to_coords(loc):
 
 
 def coords_to_loc(coords):
-    x_index = max(0, min(round(coords[0]), len(alph) - 1))
-    y = max(1, min(20, round(coords[1])))
-    return f"{alph[x_index]}{y}"
+    loc_x = ""
+    x = round(coords[0])
+    while 0 <= x:
+        # x -= 1
+        loc_x = alph[x % 26] + loc_x
+        x = (x // 26) - 1
+    return f"{loc_x}{round(coords[1])}"
 
 
 def add_coords(a, b):
@@ -249,13 +296,13 @@ def box(top_left, size=0, include_inner=False):
 
 
 def out_box(top_left, size=0, include_inner=False):
-    out_top_left = subtract_coords(top_left, [1, 1])
+    out_top_left = subtract_coords(top_left, (1, 1))
     return box(out_top_left, size + 2, include_inner)
 
 
 # Sorts by distance if C1 is not None
 def melee_box(size1, c2, size2, c1=None, mask=[]):
-    top_left = subtract_coords(c2, [size1 + 1, size1 + 1])
+    top_left = subtract_coords(c2, (size1 + 1, size1 + 1))
     melee_box = [c for c in box(top_left, size1 + size2 + 2) if (c not in mask)]
     if c1:
         melee_box.sort(key=lambda c: distance(c1, c))
