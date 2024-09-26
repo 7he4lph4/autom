@@ -89,18 +89,27 @@ def attach_map_to_combatant(map_state):
 
 
 def get_all_map_combatants():
-    return {
-        co.name: parse_note(co.note)
-        for co in c.combatants
-        if co.name.lower() not in ["map", "dm", "lair"]
-    }
+    map_combatants = {}
+    for co in c.combatants:
+        if co.name.lower() not in ["map", "dm", "lair"]:
+            note = parse_note(co.note)
+            if "location" in note:
+                note["pos"] = loc_to_coords(note["location"])
+                # note["size"] = get_size_mod(note.get("size", "M"))
+                note["size"] = note.get("size", "M")
+                map_combatants[co.name] = note
+    return map_combatants
 
 
 def generate_map_image(overlays=None):
     map_url = f"{get('otfbm_base_url', 'http://otfbm.io/')}"
 
     # Get the latest map info from the map combatant
-    map_info, _ = get_map_info()
+    map_info = {}
+    for combatant in c.combatants:
+        for effect in combatant.effects:
+            if effect.name == "map":
+                map_info = parse_map_info(effect.attacks[0].attack.automation[0].text)
 
     # Use the stored map options or defaults
     cell_size = map_info.get("options", get("mapOptions", ""))
@@ -175,6 +184,49 @@ def generate_map_image(overlays=None):
     return map_url
 
 
+# Placement Functions
+
+
+def get_placed_combatants():
+    placed, unplaced = {}, {}
+
+    def process_map_combatant(combatant):
+        data = parse_note(combatant.note)
+        if "location" in data:
+            data["pos"] = loc_to_coords(data["location"])
+            data["size_mod"] = get_size_mod(data.get("size", "M"))
+            return data, True
+        return data, False
+
+    for co in c.combatants:
+        if typeof(co) == "SimpleGroup":
+            for gco in co.combatants:
+                data, p = process_map_combatant(gco)
+                (placed if p else unplaced)[gco] = data
+        elif co.name.lower() not in ["map", "dm", "lair"]:
+            data, p = process_map_combatant(co)
+            (placed if p else unplaced)[co] = data
+    return placed, unplaced
+
+
+def update_occupied(occupied_grid, space_mod, data, width, height):
+    top = (data["pos"][0] - space_mod, data["pos"][1] - space_mod)
+    occupied_y = list(
+        range(
+            max(top[1], 1),
+            min(top[1] + data["size_mod"] + space_mod + 1, height - space_mod + 1),
+        )
+    )
+    for x in range(
+        max(top[0], 0),
+        min(data["pos"][0] + data["size_mod"] + 1, width - space_mod),
+    ):
+        if x in occupied_grid:
+            occupied_grid[x] = list(set(occupied_grid[x] + occupied_y))
+            if height - space_mod <= len(occupied_grid[x]):
+                occupied_grid.pop(x)
+
+
 # Coordinate Functions
 
 
@@ -182,38 +234,42 @@ def loc_to_coords(loc):
     loc_x = "".join(x for x in loc if x.isalpha()).upper()
     loc_y = "".join(y for y in loc if y.isdigit())
     if not loc_x or not loc_y:
-        return [0, 0]
-    return [alph.index(loc_x), int(loc_y)]
+        return (0, 0)
+    return (alph.index(loc_x), int(loc_y))
 
 
 def coords_to_loc(coords):
-    x_index = max(0, min(round(coords[0]), len(alph) - 1))
-    y = max(1, min(20, round(coords[1])))
-    return f"{alph[x_index]}{y}"
+    loc_x = ""
+    x = round(coords[0])
+    while 0 <= x:
+        # x -= 1
+        loc_x = alph[x % 26] + loc_x
+        x = (x // 26) - 1
+    return f"{loc_x}{round(coords[1])}"
 
 
 def add_coords(a, b):
-    return [a[0] + b[0], a[1] + b[1]]
+    return (a[0] + b[0], a[1] + b[1])
 
 
 def subtract_coords(a, b):
-    return [a[0] - b[0], a[1] - b[1]]
+    return (a[0] - b[0], a[1] - b[1])
 
 
 def scale_coords(coords, scale):
-    return [coords[0] * scale, coords[1] * scale]
+    return (coords[0] * scale, coords[1] * scale)
 
 
 def distance(coord1, coord2):
     return sqrt((coord2[0] - coord1[0]) ** 2 + (coord2[1] - coord1[1]) ** 2)
 
 
-def get_nearest_coords(coords1, coords2, max_dist=-1):
-    dist, c1_nearest, c2_nearest = -1, (0, 0), (0, 0)
+def get_nearest_coords(coords1, coords2):
+    dist, c1_nearest, c2_nearest = -1, (0, 1), (0, 1)
     for gc1 in coords1:
         for gc2 in coords2:
             d = distance(gc1, gc2)
-            if (d < dist or dist < 0) and (d <= max_dist or max_dist < 0):
+            if d < dist or dist < 0:
                 dist, c1_nearest, c2_nearest = d, gc1, gc2
     return dist, c1_nearest, c2_nearest
 
@@ -225,34 +281,36 @@ def get_size_mod(size):
 
 
 def box(top_left, size=0, include_inner=False):
+    if size <= 0:
+        return [top_left]
     x0, y0 = int(top_left[0]), int(top_left[1])
-    size = int(size)
-    bottom_right = [x0 + size, y0 + size]
-    return [
+    x1, y1 = x0 + size, y0 + size
+    x_range = range(max(x0, 0), x1 + 1)
+    y_range = range(max(y0 + 1, 1), y1)
+    box_coords = [(x, y) for x in x_range for y in (y0, y1) if 0 < y]
+    return box_coords + [
         (x, y)
-        for x in range(x0, bottom_right[0] + 1)
-        for y in range(y0, bottom_right[1] + 1)
-        if (
-            include_inner
-            or x in [x0, bottom_right[0]]
-            or y in [y0, bottom_right[1]]
-        )
-        and (0 <= x and 0 < y)
+        for x in (x_range if include_inner else (max(x0, 0), x1))
+        for y in y_range
     ]
 
 
 def out_box(top_left, size=0, include_inner=False):
-    out_top_left = subtract_coords(top_left, [1, 1])
+    out_top_left = subtract_coords(top_left, (1, 1))
     return box(out_top_left, size + 2, include_inner)
 
 
-def melee_box(size1, c2, size2):
-    move_top_left = subtract_coords(c2, [size1 + 1, size1 + 1])
-    return box(move_top_left, size1 + size2 + 2)
+# Sorts by distance if C1 is not None
+def melee_box(size1, c2, size2, c1=None, mask=[]):
+    top_left = subtract_coords(c2, (size1 + 1, size1 + 1))
+    melee_box = [c for c in box(top_left, size1 + size2 + 2) if (c not in mask)]
+    if c1:
+        melee_box.sort(key=lambda c: distance(c1, c))
+    return melee_box
 
 
 def occupied_box(size1, c2, size2):
-    occ_top_left = subtract_coords(c2, [size1, size1])
+    occ_top_left = subtract_coords(c2, (size1, size1))
     return box(occ_top_left, size1 + size2, True)
 
 
@@ -266,6 +324,26 @@ def get_occupied_coords(my_name="", my_size=0):
             size = get_size_mod(data.get("size", "M"))
             occupied.update(occupied_box(my_size, pos, size))
     return occupied
+
+
+def get_occupants(my_name="", my_size=0):
+    occupants = {}
+    map_combatants = get_all_map_combatants()
+    for name, data in map_combatants.items():
+        if name and (name == my_name):
+            continue
+        if "location" in data:
+            pos = loc_to_coords(data["location"])
+            size = get_size_mod(data.get("size", "M"))
+            occupants[name] = {
+                "pos": pos,
+                "size": size,
+            }
+    return occupants
+
+
+def remove_coords(coords, remove_coords):
+    return [c for c in coords if c not in remove_coords]
 
 
 def center(top_left, size):
@@ -283,15 +361,27 @@ def circle(center, radius, offset=0, bounds=[0, 1, 20, 21]):
     points = []
 
     def oct_points(h, k, x, y):
+        hnx, hny, hx, hy = (
+            max(int(h - x), bounds[0]),
+            max(int(h - y), bounds[0]),
+            min(int(h + x), bounds[2]),
+            min(int(h + y), bounds[2]),
+        )
+        knx, kny, kx, ky = (
+            max(int(k - x), bounds[1]),
+            max(int(k - y), bounds[1]),
+            min(int(k + x), bounds[3]),
+            min(int(k + y), bounds[3]),
+        )
         return [
-            (h + x, k + y),
-            (h + x, k - y),
-            (h - x, k + y),
-            (h - x, k - y),
-            (h + y, k + x),
-            (h + y, k - x),
-            (h - y, k + x),
-            (h - y, k - x),
+            (hnx, ky),
+            (hnx, kny),
+            (hny, kx),
+            (hny, knx),
+            (hx, ky),
+            (hx, kny),
+            (hy, kx),
+            (hy, knx),
         ]
 
     points = oct_points(h, k, x, y + offset)
@@ -305,13 +395,37 @@ def circle(center, radius, offset=0, bounds=[0, 1, 20, 21]):
             d += 2 * (x - y) + 1
         xoct_points = oct_points(h, k, x, y + offset)
         points += xoct_points
-    points = [
-        p
-        for p in list(set(points))
-        if (bounds[0] <= p[0] < bounds[2]) and (bounds[1] <= p[1] < bounds[3])
-    ]
+    points = list(set(points))
     points.sort(key=lambda x: (x[0], x[1]))
     return points
+
+
+# Raycasting Algorithm
+def points_in_shape(shape, points):
+    return [
+        p
+        for p in points
+        if (p in shape)
+        or len([s for s in shape if (p[1] == s[1] and p[0] < s[0])]) % 2 != 0
+    ]
+
+
+def points_outside_shape(shape, points):
+    return [
+        p
+        for p in points
+        if not (
+            (p in shape)
+            or len([s for s in shape if (p[1] == s[1] and s[0] < p[0])]) % 2 != 0
+        )
+    ]
+
+
+def diff_box(coords, top_left, box_size):
+    diff_box = box(top_left, box_size)
+    new_circle = points_outside_shape(diff_box, coords)
+    intersection = points_in_shape(coords, diff_box)
+    return new_circle + intersection
 
 
 def get_line_area(start_pos, end_pos, width=0):
