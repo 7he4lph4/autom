@@ -153,7 +153,7 @@ elif not map_info:
     return f'embed {message} -footer "{footer}"'
 else:
     map_state["size"] = map_info["size"]
-    map_state["mapoptions"] = map_info["options"]
+    map_state["mapoptions"] = map_info.get("options", "")
     map_state["bg_image"] = map_info.get("background", "")
     
 width, height = mapl.parse_mapsize(map_state.get("size"))
@@ -1001,16 +1001,7 @@ desc = []
 ###### TEST SUITES ######
 
 
-
-
-###### TEST SUITES ######
-
 # Main code execution starts here
-
-targets = [t.name for t in party_list if not autolib.isGhost(c, t)]
-if not targets:
-    err(f'No playable characters found within Combat Initiative to target!\n\nPlease join the combat initiative using `{pref}i join` or remove ghost effect from characters')
-
 
 if c.current is None:
     title = f'Booting up ancient artificial intelligences! :robot:'
@@ -1022,8 +1013,11 @@ if c.current is None:
     command_list.append(f"""{pref}embed -title "{title}" -desc "{desc_text}" -footer '{footer}'""")
     return command + nl.join(command_list)
     
+if not party_names:
+    err(f'No playable characters found within Combat Initiative to target!\n\nPlease join the combat initiative using `{pref}i join` or remove ghost effect from characters')
+
 current_init = None if not c.current else c.current.name
-if current_init in monster_names and not autolib.hasMonsterGroup(c):
+if c.current.monster_name and not autolib.hasMonsterGroup(c):
     indexed_cname_list = []
     curr_combatant = c.current
     
@@ -1033,6 +1027,8 @@ if current_init in monster_names and not autolib.hasMonsterGroup(c):
     if inp == 'once':
         # Implement the 'once' sub-command
         if current_init in monster_names:
+            target_list = party_names if autolib.isMonster(c.current) else monster_names
+            targets = [t for t in target_list if not autolib.isGhost(c, t)]
             process_monster_turn(current_init, targets, c, out, overlays, desc, command_list)
             # Update map_state["combatants"] with 'out'
             map_state["combatants"] = out
@@ -1052,6 +1048,7 @@ if current_init in monster_names and not autolib.hasMonsterGroup(c):
     if len(indexed_cname_list) > 4:
         indexed_cname_list = indexed_cname_list[:4]
 
+    current_enemy = autolib.isMonster(c.current)
     for indexed_combatant in indexed_cname_list:
         if len(command_list) > 12:
             title = f'Whoa! You\'re pushing the limits of Avrae right now!'
@@ -1065,15 +1062,25 @@ if current_init in monster_names and not autolib.hasMonsterGroup(c):
             command_list.append(f"""{pref}embed -title "{title}" -desc "{desc_text}" -footer '{footer}'""")
             command += nl.join(command_list)
             return command
-        if indexed_combatant in monster_names:
-            monster = c.get_combatant(indexed_combatant)    
+        
+        monster = c.get_combatant(indexed_combatant)    
+        if monster.monster_name:
+            if autolib.isMonster(monster) != current_enemy:
+                title = f'''Automation Complete! It\'s the other side's turn now! :mage:'''
+                desc_text = f'Waiting on **{indexed_combatant}** to play their turn!'
+                command_list.append(f"""{pref}embed -title "{title}" -desc "{desc_text}" -footer '{footer}'""")
+                command += nl.join(command_list)
+                return command
+                
             note = mapl.parse_note(monster.note)
 
             if not note or not 'location' in note:
                 process_map_absentee_monster_turn(indexed_combatant, command_list)
             else:
+                target_list = party_names if current_enemy else monster_names
+                targets = [t for t in target_list if not autolib.isGhost(c, t)]
                 process_monster_turn(indexed_combatant, targets, c, out, overlays, desc, command_list)
-                toggle_monster_color(monster, 'r')
+                toggle_monster_color(monster, 'r' if current_enemy else 'b')
         else:
             # Handle non-monster combatants
             if indexed_combatant.casefold() in ['map', 'dm', 'lair'] and c.get_combatant(indexed_combatant).init == 20:
