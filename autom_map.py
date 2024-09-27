@@ -192,6 +192,7 @@ def get_placed_combatants():
 
     def process_map_combatant(combatant):
         data = parse_note(combatant.note)
+        data["combatant"] = combatant
         if "location" in data:
             data["pos"] = loc_to_coords(data["location"])
             data["size_mod"] = get_size_mod(data.get("size", "M"))
@@ -202,10 +203,10 @@ def get_placed_combatants():
         if typeof(co) == "SimpleGroup":
             for gco in co.combatants:
                 data, p = process_map_combatant(gco)
-                (placed if p else unplaced)[gco] = data
+                (placed if p else unplaced)[gco.name] = data
         elif co.name.lower() not in ["map", "dm", "lair"]:
             data, p = process_map_combatant(co)
-            (placed if p else unplaced)[co] = data
+            (placed if p else unplaced)[co.name] = data
     return placed, unplaced
 
 
