@@ -15,8 +15,8 @@ inp2 = "&2&"
 inp3 = "&3&"
 
 using(
-    autolib="ec14bc6e-81e4-4df7-86e9-5d64ed2fa9b7",
-    core="49f5f503-1c00-4f24-ba43-92e65c2c2fb6",
+    autolib = "ec14bc6e-81e4-4df7-86e9-5d64ed2fa9b7",
+    core = "49f5f503-1c00-4f24-ba43-92e65c2c2fb6",
     presets = "c14e4526-4acb-4964-8ba9-f6861617ffdf",
     mapl = "51af2e97-64e3-444a-994c-61c45c3f0994",
     mobl = "a7863890-e522-4116-a79f-2fb764a83f77",
@@ -120,42 +120,12 @@ if not map_attach:
 \n:warning: Make sure to add all the players and monsters to combat initiative before loading the map with one of the above commands for a seamless assignment of combat positions.
     """
     return f'embed -title "Map Settings attached to {map_attach.name}!" -desc "{desc}" -color <color> -footer "{footer}"'
-map_state = {"current_map": None, "size": None, "bg_image": None}
-        
-def load_specific_map(map_name):
-    map_name, map_data, matches = presets.find_map_by_subtext(map_name)
-    error_base = '-title "Map Setup Pending:" -desc '
-    if not matches:
-        return error_base + f'''"No maps found matching '{map_name}'. Use `{cmd} map list` to see available maps."'''
-    
-    # Update map_state with new map data
-    map_state["current_map"] = map_name
-    map_state["size"] = map_data["size"]
-    map_state["mapoptions"] = map_data["cell_pixel"]
-    map_state["bg_image"] = map_data["image"]
-    
-    # Update the map effect on the map attach
-    neweffect = f"Size: {map_state['size']} ~ Background: {map_state['bg_image']} ~ Options: {map_state['mapoptions']}"
-    map_attach.remove_effect('map')
-    map_attach.add_effect('map', attacks=[{"attack":{"name":"map","automation":[{"type":"text","text":neweffect}],"_v":2}}])
-    
-    base_message = f"`{map_name}` map loaded successfully. Combat positions assigned.\n\n**Map-Art Courtesy of**:\n[2-Minute Tabletop](https://2minutetabletop.com/) under the [CC BY-NC 4.0 License](https://creativecommons.org/licenses/by-nc/4.0/)"
-    if len(matches) > 1:
-        other_matches = nl.join(matches[1:])
-        base_message += f"\n\nYou may also be looking for: ```{other_matches}```"
-    map_url = mapl.generate_map_image()
-    return f'-title "Map Updated" -desc "{base_message}" -image "{map_url}"'
-
-if inp1.lower() in ['m', 'map']:
-    return f'embed {load_specific_map(inp2)} -footer "{footer}"'
-elif not map_info:
-    message = load_specific_map(randchoice(list(presets.map_presets.keys())))
-    return f'embed {message} -footer "{footer}"'
-else:
-    map_state["size"] = map_info["size"]
-    map_state["mapoptions"] = map_info.get("options", "")
-    map_state["bg_image"] = map_info.get("background", "")
-    
+map_state = {
+    "current_map": None, 
+    "size": map_info.get("size", [20, 20]),
+    "mapoptions": map_info.get("options", ""),
+    "bg_image": map_info.get("background", "")
+}
 width, height = mapl.parse_mapsize(map_state.get("size"))
 occupied_positions = set()
 map_combatants = mapl.get_all_map_combatants()
@@ -219,20 +189,43 @@ def place_combatants():
         # if unplaced:
         #     err(f"Could not place {combatant.name} on the map without overlapping.")
         
+if (inp1.lower() in ['m', 'map']) or not map_info:
+    map_name = inp2 if inp1.lower() in ['m', 'map'] else ""
+    message = presets.load_specific_map(map_state, map_attach, map_name)
+    width, height = mapl.parse_mapsize(map_state.get("size"))
+    if unplaced:
+        place_combatants()
+    map_url = mapl.generate_map_image()
+    return f'embed {message} -image "{map_url}" -footer "{footer}"'
+
 if unplaced:
     place_combatants()
-    command_list.append(f'{pref}embed -title "Map Setup Complete!" -desc "All combatants have been placed on the map." -footer "{footer}"')
+    map_url = mapl.generate_map_image()
+    command_list.append(f'{pref}embed -title "Map Setup Complete!" -desc "All combatants have been placed on the map." -image "{map_url}" -footer "{footer}"')
 
+if not party_names:
+    err(f'No playable characters found within Combat Initiative to target!\n\nPlease join the combat initiative using `{pref}i join` or remove ghost effect from characters.')
+
+if c.current is None:
+    title = f'Booting up ancient artificial intelligences! :robot:'
+    if monster_names:
+        desc_text = f'\n:robot: _Auto-attack sequence initiated!_\n\nAutomating the following monsters:\n**{", ".join(monster_names)}**\n\n**Use `{cmd}` again now to automate all monsters in combat!**'
+        command_list.append(f'{pref}i n')
+    else:
+        desc_text = f'_No monsters found in initiative!_\n\nThat\'s fine, feel free to add them any time and run `{cmd}` every time it\'s the monster\'s turn!'
+    command_list.append(f"""{pref}embed -title "{title}" -desc "{desc_text}" -footer '{footer}'""")
+    return command + nl.join(command_list)
+    
 
 # MAP INITIALIZATION COMPLETE
 
 
 def find_best_target(monster, target_names, max_surrounding=2):
-    if monster.stats.intelligence < 10:
+    if monster.stats.intelligence < 8:
         return target_names[randint(len(target_names))]
     
     targets = [c.get_combatant(name) for name in target_names if c.get_combatant(name)]
-    target_hp = [(t, t.hp) for t in targets if t.hp is not None and t.hp > 0]
+    target_hp = [(t, t.hp) for t in targets if t.hp is not None and 0 < t.hp]
     
     if not target_hp:
         return target_names[randint(len(target_names))]
@@ -695,13 +688,13 @@ def process_monster_turn(indexed_combatant, targets, c, out, overlays, desc, com
     # Get location from note
     monster_map_data = mapl.parse_note(monster.note)
     monster_location = monster_map_data.get('location', None)
-    monster_size_mod = mapl.get_size_mod(monster_map_data.get('size', 'M'))
-
+    
     # Check if map is present
     if map_attach and monster_location:
-        # Get occupied positions to avoid collisions
-        occupied_positions = mapl.get_occupied_coords(monster.name)
+        monster_size_mod = mapl.get_size_mod(monster_map_data.get('size', 'M'))
         
+        # Get occupied positions to avoid collisions
+        occupied_positions = mapl.get_occupied_coords(monster.name, monster_size_mod)
 
         ### AoE ###
         aoe_attacks = mobl.get_aoe_attacks(monster.name)
@@ -776,13 +769,13 @@ def process_monster_turn(indexed_combatant, targets, c, out, overlays, desc, com
 
         target_map_data = mapl.parse_note(target_combatant.note)
         target_location = target_map_data.get('location', None)
-        target_size_mod = mapl.get_size_mod(target_map_data.get('size', 'M'))
 
         if target_location:
             start_pos = mapl.loc_to_coords(monster_location)
             monster_box = mapl.box(start_pos, monster_size_mod)
             
             target_pos = mapl.loc_to_coords(target_location)
+            target_size_mod = mapl.get_size_mod(target_map_data.get('size', 'M'))
             target_box = mapl.box(target_pos, target_size_mod)
             
             monster_speed = mobl.get_monster_speed(monster_name)[0]
@@ -800,9 +793,7 @@ def process_monster_turn(indexed_combatant, targets, c, out, overlays, desc, com
             # toggle_monster_color(monster, 'p')
             # map_url = mapl.generate_map_image(overlays)
             # command_list.append(f'''{pref}embed -title "Monsters are deciding their actions..." -image "{map_url}" -footer "{footer}"''')
-
-            monster_size_mod = mapl.get_size_mod(monster_map_data.get('size', 'M'))
-            occupied_positions = mapl.get_occupied_coords(monster.name, monster_size_mod)
+            
             # occupants = mapl.get_occupants(monster.name, monster_size_mod)
             # occupied_positions = set(out[name].get('location') for name in out if 'location' in out[name])
             
@@ -860,9 +851,6 @@ def process_monster_turn(indexed_combatant, targets, c, out, overlays, desc, com
             if max_attack_reach < distance:
                 move_distance = min(monster_speed, distance - max_attack_reach)
                 
-                target_melee = mapl.melee_box(monster_size_mod, target_pos, target_size_mod)
-                unoccupied_melee = [pos for pos in target_melee if pos not in occupied_positions]
-                
                 if move_distance < distance - max_attack_reach:
                     # Monster needs to dash
                     move_distance = min(monster_speed * 2, distance - max_attack_reach)
@@ -899,6 +887,8 @@ def process_monster_turn(indexed_combatant, targets, c, out, overlays, desc, com
                     command_list.append(f'{pref}i n')
                     return
                 else:
+                    target_melee = mapl.melee_box(monster_size_mod, target_pos, target_size_mod)
+                    unoccupied_melee = [pos for pos in target_melee if pos not in occupied_positions]
                     if 0 < len(unoccupied_melee):
                         target_melee = unoccupied_melee
                     melee_position = mapl.get_nearest_coords([start_pos], target_melee)[2]
@@ -986,7 +976,6 @@ def toggle_monster_color(monster, new_color):
     
     return original_color
 
-
 def process_map_absentee_monster_turn(indexed_combatant, command_list):
     title = f'New monster detected: {indexed_combatant}'
     desc_text = f'This monster is not currently on the map, please place the monster\'s token on the map manually using: ```{pref}map -t {indexed_combatant}|C4```\nReplace `C4` to any location you like.'
@@ -1002,19 +991,6 @@ desc = []
 
 
 # Main code execution starts here
-
-if c.current is None:
-    title = f'Booting up ancient artificial intelligences! :robot:'
-    if monster_names:
-        desc_text = f'\n:robot: _Auto-attack sequence initiated!_\n\nAutomating the following monsters:\n**{", ".join(monster_names)}**\n\n**Use `{cmd}` again now to automate all monsters in combat!**'
-        command_list.append(f'{pref}i n')
-    else:
-        desc_text = f'_No monsters found in initiative!_\n\nThat\'s fine, feel free to add them any time and run `{cmd}` every time it\'s the monster\'s turn!'
-    command_list.append(f"""{pref}embed -title "{title}" -desc "{desc_text}" -footer '{footer}'""")
-    return command + nl.join(command_list)
-    
-if not party_names:
-    err(f'No playable characters found within Combat Initiative to target!\n\nPlease join the combat initiative using `{pref}i join` or remove ghost effect from characters')
 
 current_init = None if not c.current else c.current.name
 if c.current.monster_name and not autolib.hasMonsterGroup(c):
@@ -1080,7 +1056,7 @@ if c.current.monster_name and not autolib.hasMonsterGroup(c):
                 target_list = party_names if current_enemy else monster_names
                 targets = [t for t in target_list if not autolib.isGhost(c, t)]
                 process_monster_turn(indexed_combatant, targets, c, out, overlays, desc, command_list)
-                toggle_monster_color(monster, 'r' if current_enemy else 'b')
+                # toggle_monster_color(monster, 'r' if current_enemy else 'b')
         else:
             # Handle non-monster combatants
             if indexed_combatant.casefold() in ['map', 'dm', 'lair'] and c.get_combatant(indexed_combatant).init == 20:
@@ -1108,7 +1084,6 @@ if c.current.monster_name and not autolib.hasMonsterGroup(c):
     command += nl.join(command_list)
     return command
 
-
 # It's a player's turn
 if current_init.casefold() in ['map', 'dm', 'lair'] and c.turn_num == 20:
     title = f'Waiting on Lair Action :dragon:'
@@ -1132,6 +1107,9 @@ To move your player character on the map:
 """
     else:
         desc_text = f"Waiting on **{current_init}** to play their turn!"
+
+return f"""embed -title "{title}" -desc "{desc_text}" -footer "{footer}" """
+
 
 return f"""embed -title "{title}" -desc "{desc_text}" -footer "{footer}" """
 </drac2>

@@ -1,6 +1,9 @@
 # Auto Map Presets
 
-using(core="49f5f503-1c00-4f24-ba43-92e65c2c2fb6")
+using(
+    core="49f5f503-1c00-4f24-ba43-92e65c2c2fb6",
+    mapl="51af2e97-64e3-444a-994c-61c45c3f0994",
+)
 
 bbcode = """
 [url=https://ibb.co/TW0G3zm][img]https://i.ibb.co/y4kCjLW/Arena-of-Earth-Desert-Day-32x24.jpg[/img][/url]
@@ -80,7 +83,7 @@ def extract_map_info(bb=bbcode):
         bbp = "".join(url.split("/")[-1].split(".")[:-1]).split("-")
         sizes = [p for p in bbp if "x" in p and all(s.isdigit() for s in p.split("x"))]
         name = " ".join([p for p in bbp if p not in sizes]).title()
-        
+
         # Use custom size if available, otherwise use size from URL or default
         if name in custom_sizes:
             size = custom_sizes[name]
@@ -92,7 +95,7 @@ def extract_map_info(bb=bbcode):
                 size = "16x11"  # Use standard size
         else:
             size = "16x11"  # Default size
-        
+
         cell_pixel = get_cell_pixel(size, name)
         map_dict[name] = {"cell_pixel": cell_pixel, "size": size, "image": url}
     return map_dict
@@ -146,3 +149,48 @@ def generate_list_embeds(footer):
         )
         for i, chunk in enumerate(chunks)
     ]
+
+
+def load_specific_map(map_state, map_attach, map_name=""):
+    if not map_name:
+        map_name = randchoice(list(map_presets.keys()))
+    map_name, map_data, matches = find_map_by_subtext(map_name)
+    error_base = '-title "Map Setup Pending:" -desc '
+    if not matches:
+        return (
+            error_base
+            + f'''"No maps found matching '{map_name}'. Use `{ctx.prefix + ctx.alias} map list` to see available maps."'''
+        )
+
+    # Update map_state with new map data
+    map_state["current_map"] = map_name
+    map_state["size"] = map_data["size"]
+    map_state["mapoptions"] = map_data["cell_pixel"]
+    map_state["bg_image"] = map_data["image"]
+
+    # Update the map effect on the map attach
+    neweffect = f"Size: {map_state['size']} ~ Background: {map_state['bg_image']} ~ Options: {map_state['mapoptions']}"
+    map_attach.remove_effect("map")
+    map_attach.add_effect(
+        "map",
+        attacks=[
+            {
+                "attack": {
+                    "name": "map",
+                    "automation": [{"type": "text", "text": neweffect}],
+                    "_v": 2,
+                }
+            }
+        ],
+    )
+    base_message = f"`{map_name}` map loaded successfully. Combat positions assigned.\n\n**Map-Art Courtesy of**:\n[2-Minute Tabletop](https://2minutetabletop.com/) under the [CC BY-NC 4.0 License](https://creativecommons.org/licenses/by-nc/4.0/)"
+    if len(matches) > 1:
+        other_matches = "\n".join(matches[1:])
+        base_message += f"\n\nYou may also be looking for: ```{other_matches}```"
+    return f'-title "Map Updated" -desc "{base_message}"'
+
+
+def get_channel_name():
+    if ctx.channel.parent:
+        return ctx.channel.parent.name
+    return ctx.channel.name
