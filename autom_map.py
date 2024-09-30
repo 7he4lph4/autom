@@ -258,7 +258,7 @@ def subtract_coords(a, b):
 
 
 def scale_coords(coords, scale):
-    return (coords[0] * scale, coords[1] * scale)
+    return (round(coords[0] * scale), round(coords[1] * scale))
 
 
 def distance(coord1, coord2):
@@ -273,6 +273,36 @@ def get_nearest_coords(coords1, coords2):
             if d < dist or dist < 0:
                 dist, c1_nearest, c2_nearest = d, gc1, gc2
     return dist, c1_nearest, c2_nearest
+
+
+def get_nearest(pos1, size1, pos2, size2):
+    nx1, ny1 = pos1
+    nx2, ny2 = pos2
+    x, s = 0, max(size1, size2)
+    while x < s:
+        x += 1
+        if x <= size1:
+            x1, y1 = pos1[0] + x, pos1[1] + x
+            nx1 = x1 if (abs(nx2 - x1) < abs(nx2 - nx1)) else nx1
+            ny1 = y1 if (abs(ny2 - y1) < abs(ny2 - ny1)) else ny1
+        if x <= size2:
+            x2, y2 = pos2[0] + x, pos2[1] + x
+            nx2 = x2 if ((abs(nx1 - x2) < abs(nx1 - nx2))) else nx2
+            ny2 = y2 if ((abs(ny1 - y2) < abs(ny1 - ny2))) else ny2
+    distance = round(distance((nx1, ny1), (nx2, ny2))) * 5
+    return distance, (nx1, ny1), (nx2, ny2)
+
+
+def get_placed_distances(name, target_names, placed):
+    pos, size = placed[name].pos, placed[name].size_mod
+    distances = {}
+    for pc, data in placed.items():
+        if pc != name and pc in target_names and "pos" in data:
+            distance = get_nearest(pos, size, data.pos, data.size_mod)[0]
+            distances[distance] = distances.get(distance, []) + [pc]
+    dkeys = list(distances.keys())
+    dkeys.sort()
+    return distances
 
 
 # Sizes: <=M: 0, L: 1, H: 2, G: 3

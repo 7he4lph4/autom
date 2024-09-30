@@ -18,7 +18,7 @@ using(
     autolib = "ec14bc6e-81e4-4df7-86e9-5d64ed2fa9b7",
     core = "49f5f503-1c00-4f24-ba43-92e65c2c2fb6",
     presets = "c14e4526-4acb-4964-8ba9-f6861617ffdf",
-    mapl = "51af2e97-64e3-444a-994c-61c45c3f0994",
+    mapl = "faa1ca51-5c75-401c-be46-8650472e68f2",
     mobl = "a7863890-e522-4116-a79f-2fb764a83f77",
     targl = "f8369cc0-8ab0-42a5-8dfd-4ab7f34c0e61"
 )
@@ -221,14 +221,16 @@ if c.current is None:
 
 
 def find_best_target(monster, target_names, max_surrounding=2):
-    if monster.stats.intelligence < 8:
-        return target_names[randint(len(target_names))]
+    distances = mapl.get_placed_distances(monster.name, target_names, placed)
+    
+    if monster.stats.intelligence < 20:
+        return randchoice(distances[min(distances)])
     
     targets = [c.get_combatant(name) for name in target_names if c.get_combatant(name)]
     target_hp = [(t, t.hp) for t in targets if t.hp is not None and 0 < t.hp]
     
     if not target_hp:
-        return target_names[randint(len(target_names))]
+        return randchoice(distances[min(distances)])
     
     def count_surrounding_monsters(target):
         target_location = get_combatant_location(target)
@@ -269,7 +271,7 @@ def find_best_target(monster, target_names, max_surrounding=2):
         return False
     
     # Sort targets by HP and intelligence level
-    if monster.stats.intelligence >= 17:
+    if 17 <= monster.stats.intelligence:
         sorted_targets = core.sorted(target_hp, key=lambda x: x[1])
     else:
         # Weighted random selection favoring lower HP targets
@@ -474,28 +476,6 @@ def get_targets_in_aoe(monster_location, aoe_attack, target_names):
                 affected_targets.append(target_name)
     return affected_targets
 
-def move_towards(start, end, distance, occupied_positions):
-    start_pos = mapl.loc_to_coords(start)
-    end_pos = mapl.loc_to_coords(end)
-    total_distance = mapl.distance(start_pos, end_pos) * 5
-    dxy = mapl.subtract_coords(end_pos, start_pos)
-    ratio = min(distance / total_distance, 1) if 0 < total_distance else 0
-    move_coords = mapl.add_coords(start_pos, mapl.scale_coords(dxy, ratio))
-    new_location = mapl.coords_to_loc(move_coords)
-    # Check if the new location is occupied
-    if new_location in occupied_positions:
-        new_location = find_nearest_unoccupied_position(start, end, occupied_positions)
-    
-    # Calculate actual movement for the arrow
-    new_pos = mapl.loc_to_coords(new_location)
-    distanceT = round(mapl.distance(start_pos, new_pos)) * 5
-    
-    # Generate arrow overlay with correct syntax
-    color = 'r' # Use red color for the arrow
-    arrow = f"*a{distanceT}{color}{start}{new_location}"
-    
-    return new_location, arrow
-
 def create_arrow_overlay(start_location, end_location):
     start_pos = mapl.loc_to_coords(start_location)
     end_pos = mapl.loc_to_coords(end_location)
@@ -647,22 +627,46 @@ def get_spell_range(spell_name):
             return int(range_value) if range_value else 30  # Default to 30 if no numeric value found
     return 30  # Default range if spell not found
 
-def get_goto_coords(name, size, distance=-1, pos=(0,0)):
+def get_goto_coords(name, size, target_positions, distance=-1, pos=(0,0)):
     pcs = {pc: placed[pc] for pc in placed if name != pc}
-    occupied_coords = set(p for d in pcs.values() for p in mapl.occupied_box(size, d.pos, d.size_mod))
+    occupied = set(p for d in pcs.values() for p in mapl.occupied_box(size, d.pos, d.size_mod))
+    
+    goto_coords =  [tp for tp in target_positions if tp not in occupied]
+    if 0 < len(goto_coords):
+        return goto_coords[0]
+
     goto_coords = list(
         set(
             p
-            for p in pcs.values()
-            for p in mapl.melee_box(size, p.pos, p.size_mod)
-            if (p not in occupied_coords)
+            for pc in pcs.values()
+            for p in mapl.melee_box(size, pc.pos, pc.size_mod)
+            if (p not in occupied)
             and (0 <= p[0] < width - size)
             and (1 <= p[1] <= height - size)
             and (distance < 0 or mapl.distance(pos, p) <= distance)
         )
     )
-    goto_coords.sort()
-    return goto_coords
+    goto_coords.sort(key=lambda p: mapl.distance(target_positions[0], p))
+    return goto_coords[0]
+
+def move_towards(name, start_pos, end, distance, occupied_positions, size_mod=0):
+    total_distance = mapl.distance(start_pos, end) * 5
+    dxy = mapl.subtract_coords(end, start_pos)
+    ratio = min(distance / total_distance, 1) if 0 < total_distance else 0
+    
+    move_coords = mapl.add_coords(start_pos, mapl.scale_coords(dxy, ratio))
+    move_pos = get_goto_coords(name, size_mod, [move_coords], distance, start_pos)
+    if len(move_pos) < 1:
+        return mapl.coords_to_loc(start_pos), None
+    
+    # Generate arrow overlay with correct syntax
+    distanceT = round(mapl.distance(start_pos, move_pos)) * 5
+    start_location = mapl.coords_to_loc(start_pos)
+    new_location = mapl.coords_to_loc(move_pos)
+    color = 'r' # Use red color for the arrow
+    arrow = f"*a{distanceT}{color}{start_location}{new_location}"
+    
+    return new_location, arrow
 
 def process_monster_turn(indexed_combatant, targets, c, out, overlays, desc, command_list):
     monster = c.get_combatant(indexed_combatant)
@@ -691,6 +695,8 @@ def process_monster_turn(indexed_combatant, targets, c, out, overlays, desc, com
     
     # Check if map is present
     if map_attach and monster_location:
+        
+        start_pos = mapl.loc_to_coords(monster_location)
         monster_size_mod = mapl.get_size_mod(monster_map_data.get('size', 'M'))
         
         # Get occupied positions to avoid collisions
@@ -711,7 +717,6 @@ def process_monster_turn(indexed_combatant, targets, c, out, overlays, desc, com
 
             if best_position:
                 # Calculate the distance to the best position
-                start_pos = mapl.loc_to_coords(monster_location)
                 end_pos = mapl.loc_to_coords(best_position)
                 distance_to_position = mapl.distance(start_pos, end_pos) * 5
 
@@ -720,7 +725,7 @@ def process_monster_turn(indexed_combatant, targets, c, out, overlays, desc, com
                 # Move the monster if needed
                 if distance_to_position > 0:
                     move_distance = min(monster_speed, distance_to_position)
-                    new_location, arrow = move_towards(monster_location, best_position, move_distance, occupied_positions)
+                    new_location, arrow = move_towards(monster_name, start_pos, end_pos, move_distance, occupied_positions, monster_size_mod)
                     update_monster_position(monster, new_location)
                     occupied_positions.add(new_location)
                     if arrow:
@@ -761,6 +766,7 @@ def process_monster_turn(indexed_combatant, targets, c, out, overlays, desc, com
                     return
         ### AoE ###
 
+        placed_distances = mapl.get_placed_distances(monster.name, targets, placed)
         chosen_target = find_best_target(monster, targets)
         target_combatant = c.get_combatant(chosen_target)
         if not target_combatant:
@@ -771,7 +777,6 @@ def process_monster_turn(indexed_combatant, targets, c, out, overlays, desc, com
         target_location = target_map_data.get('location', None)
 
         if target_location:
-            start_pos = mapl.loc_to_coords(monster_location)
             monster_box = mapl.box(start_pos, monster_size_mod)
             
             target_pos = mapl.loc_to_coords(target_location)
@@ -826,7 +831,7 @@ def process_monster_turn(indexed_combatant, targets, c, out, overlays, desc, com
                     if distance != ideal_distance:
                         move_distance = min(monster_speed, abs(distance - ideal_distance))
                         movement_direction = "towards" if distance > ideal_distance else "away from"
-                        new_location, arrow = move_towards(monster_location, target_location, move_distance, occupied_positions)
+                        new_location, arrow = move_towards(monster_name, start_pos, target_pos, move_distance, occupied_positions, monster_size_mod)
                         update_monster_position(monster, new_location)
                         occupied_positions.add(new_location)
                         if arrow:
@@ -851,28 +856,20 @@ def process_monster_turn(indexed_combatant, targets, c, out, overlays, desc, com
             if max_attack_reach < distance:
                 move_distance = min(monster_speed, distance - max_attack_reach)
                 
+                # Monster needs to dash   
                 if move_distance < distance - max_attack_reach:
-                    # Monster needs to dash
-                    move_distance = min(monster_speed * 2, distance - max_attack_reach)
-                    goto_coords = get_goto_coords(monster.name, monster_size_mod, move_distance/5, me_nearest)
                     
-                    new_position, new_location, arrow = (0, 0), "", None
-                    if 0 < len(goto_coords):
-                        new_position = mapl.get_nearest_coords(goto_coords, [target_nearest])[1]
-                        new_location = mapl.coords_to_loc(new_position)
-                        arrow = create_arrow_overlay(monster_location, new_location)
-                    else:  
-                        new_location, arrow = move_towards(monster_location, target_location, move_distance, occupied_positions)
-                        new_position = mapl.loc_to_coords(new_location)
+                    move_distance = monster_speed * 2
+                    new_location, arrow = move_towards(monster_name, start_pos, target_pos, move_distance, occupied_positions, monster_size_mod)
+                    new_position = mapl.loc_to_coords(new_location)
                     
-                    """map_size = mapl.parse_mapsize(mapl.get_map_info()[0].get("size"))
-                    circle = mapl.circle(start_pos, (monster_speed * 2) / 5, bounds=[0, 1, map_size[0], map_size[1]])
+                    """circle = mapl.circle(start_pos, (monster_speed * 2) / 5, bounds=[0, 1, map_size[0], map_size[1]])
                     for oco, oco_info in occupants.items():
                       circle = [cc for cc in circle if cc not in oco_info.box] #+ oc_melee
                       nearest_dist = mapl.get_nearest_coords([start_pos], oco_info.box, move_distance / 5)[0]
                       if 0 <= nearest_dist:
                           oc_melee = [p for p in oco_info.melee if mapl.distance(p, start_pos) * 5 <= move_distance]    
-                    command_list.append(f"{pref}echo DISTANCEEEE: {new_location}")"""
+                    command_list.append(f"{pref}echo DISTANCE: {new_location}")"""
                     
                     update_monster_position(monster, new_location)
                     placed[monster.name]["pos"] = new_position
@@ -886,7 +883,7 @@ def process_monster_turn(indexed_combatant, targets, c, out, overlays, desc, com
                     command_list.append(f'{pref}embed -title "Monster Dashes: {monster.name}" -desc "{desc[-1]}" -image "{map_url}" -footer "{footer}"')
                     command_list.append(f'{pref}i n')
                     return
-                else:
+                else: # Monster can reach target
                     target_melee = mapl.melee_box(monster_size_mod, target_pos, target_size_mod)
                     unoccupied_melee = [pos for pos in target_melee if pos not in occupied_positions]
                     if 0 < len(unoccupied_melee):
@@ -897,7 +894,7 @@ def process_monster_turn(indexed_combatant, targets, c, out, overlays, desc, com
                     if 0 < len(unoccupied_melee):
                         arrow = create_arrow_overlay(monster_location, melee_location)
                     else:
-                        new_location, arrow = move_towards(monster_location, melee_location, move_distance, occupied_positions)
+                        new_location, arrow = move_towards(monster_name, start_pos, melee_position, move_distance, occupied_positions, monster_size_mod)
                     update_monster_position(monster, new_location)
                     placed[monster.name]["pos"] = melee_position
                     occupied_positions.add(new_location)
@@ -1107,9 +1104,6 @@ To move your player character on the map:
 """
     else:
         desc_text = f"Waiting on **{current_init}** to play their turn!"
-
-return f"""embed -title "{title}" -desc "{desc_text}" -footer "{footer}" """
-
 
 return f"""embed -title "{title}" -desc "{desc_text}" -footer "{footer}" """
 </drac2>
