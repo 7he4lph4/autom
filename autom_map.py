@@ -31,9 +31,9 @@ def parse_mapsize(size_str):
 
 def get_map_info():
     for combatant in c.combatants:
-        for attack in combatant.attacks:
-            if attack.name == "map":
-                map_info = parse_map_info(attack.raw.automation[-1].text)
+        for effect in combatant.effects:
+            if effect.name == "map":
+                map_info = parse_map_info(effect.attacks[0].attack.automation[0].text)
                 return map_info, combatant
     return {}, None
 
@@ -57,10 +57,6 @@ def update_combatant_note(combatant, **kwargs):
 
 def attach_map_to_combatant(map_state):
     map_info, map_combatant = get_map_info()
-
-    if not map_combatant:
-        map_combatant = mapPresent()
-
     if not map_combatant:
         missing_map_warning = f"Map init object missing!\n\nPlease add a map object to combat using:\n`{pref}i add 0 DM -p 20`"
         return False, missing_map_warning
@@ -88,28 +84,11 @@ def attach_map_to_combatant(map_state):
     return True, f"Map information attached to {map_combatant.name}"
 
 
-def get_all_map_combatants():
-    map_combatants = {}
-    for co in c.combatants:
-        if co.name.lower() not in ["map", "dm", "lair"]:
-            note = parse_note(co.note)
-            if "location" in note:
-                note["pos"] = loc_to_coords(note["location"])
-                # note["size"] = get_size_mod(note.get("size", "M"))
-                note["size"] = note.get("size", "M")
-                map_combatants[co.name] = note
-    return map_combatants
-
-
 def generate_map_image(overlays=None):
     map_url = f"{get('otfbm_base_url', 'http://otfbm.io/')}"
 
     # Get the latest map info from the map combatant
-    map_info = {}
-    for combatant in c.combatants:
-        for effect in combatant.effects:
-            if effect.name == "map":
-                map_info = parse_map_info(effect.attacks[0].attack.automation[0].text)
+    map_info, map_combatant = get_map_info()
 
     # Use the stored map options or defaults
     cell_size = map_info.get("options", get("mapOptions", ""))
@@ -189,39 +168,65 @@ def generate_map_image(overlays=None):
 
 def get_placed_combatants():
     placed, unplaced = {}, {}
-
-    def process_map_combatant(combatant):
-        data = parse_note(combatant.note)
-        data["combatant"] = combatant
-        if "location" in data:
-            data["pos"] = loc_to_coords(data["location"])
-            data["size_mod"] = get_size_mod(data.get("size", "M"))
-            return data, True
-        return data, False
-
     for co in c.combatants:
         if typeof(co) == "SimpleGroup":
             for gco in co.combatants:
-                data, p = process_map_combatant(gco)
+                data, p = process_map_combatant(gco, placed)
                 (placed if p else unplaced)[gco.name] = data
         elif co.name.lower() not in ["map", "dm", "lair"]:
-            data, p = process_map_combatant(co)
+            data, p = process_map_combatant(co, placed)
             (placed if p else unplaced)[co.name] = data
     return placed, unplaced
 
 
+def update_adjacent(data, placed):
+    if 0 < len(data.get("adjacent", [])):
+        for name in data["adjacent"]:
+            placed[name]["adjacent"].remove(data["combatant"].name)
+    data["adjacent"] = []
+
+    x, y = data["pos"]
+    size_offset = (data["size_mod"] + 1, data["size_mod"] + 1)
+    for pname, pc in placed.items():
+        pcx, pcy = subtract_coords(pc["pos"], size_offset)
+        pc_size = size_offset[0] + pc["size_mod"] + 1
+        if (x in range(pcx, pcx + pc_size + 1)) and (
+            y in range(pcy, pcy + pc_size + 1)
+        ):
+            data["adjacent"].append(pname)
+            pc["adjacent"].append(data["combatant"].name)
+
+
+def process_map_combatant(combatant, placed):
+    data = parse_note(combatant.note)
+    data["combatant"] = combatant
+    if "location" in data:
+        data["pos"] = loc_to_coords(data["location"])
+        data["size_mod"] = get_size_mod(data.get("size", "M"))
+        update_adjacent(data, placed)
+        return data, True
+    return data, False
+
+
+def update_position(combatant, placed, position, out):
+    co_name = combatant.name
+    data = placed.get(co_name, {})
+    data["location"] = coords_to_loc(position)
+    data["pos"] = position
+    update_adjacent(data, placed)
+    placed[co_name] = data
+
+    update_combatant_note(combatant, location=data["location"])
+    out[co_name] = out.get(co_name, {})
+    out[co_name]["location"] = data["location"]
+
+
 def update_occupied(occupied_grid, space_mod, data, width, height):
     top = (data["pos"][0] - space_mod, data["pos"][1] - space_mod)
-    occupied_y = list(
-        range(
-            max(top[1], 1),
-            min(top[1] + data["size_mod"] + space_mod + 1, height - space_mod + 1),
-        )
-    )
-    for x in range(
-        max(top[0], 0),
-        min(data["pos"][0] + data["size_mod"] + 1, width - space_mod),
-    ):
+    xbound, ybound = width - space_mod, height - space_mod + 1
+    size = data["size_mod"] + 1
+    occupied_y = list(range(max(top[1], 1), min(top[1] + size + space_mod, ybound)))
+    for x in range(max(top[0], 0), min(data["pos"][0] + size, xbound)):
         if x in occupied_grid:
             occupied_grid[x] = list(set(occupied_grid[x] + occupied_y))
             if height - space_mod <= len(occupied_grid[x]):
@@ -236,14 +241,16 @@ def loc_to_coords(loc):
     loc_y = "".join(y for y in loc if y.isdigit())
     if not loc_x or not loc_y:
         return (0, 0)
-    return (alph.index(loc_x), int(loc_y))
+    x = 0
+    for s in loc_x:
+        x = x * 26 + (alph.index(s) + 1)
+    return (x - 1, int(loc_y))
 
 
 def coords_to_loc(coords):
     loc_x = ""
-    x = round(coords[0])
+    x = round(coords[0])  # - 1
     while 0 <= x:
-        # x -= 1
         loc_x = alph[x % 26] + loc_x
         x = (x // 26) - 1
     return f"{loc_x}{round(coords[1])}"
@@ -258,7 +265,7 @@ def subtract_coords(a, b):
 
 
 def scale_coords(coords, scale):
-    return (round(coords[0] * scale), round(coords[1] * scale))
+    return ((coords[0] * scale), (coords[1] * scale))
 
 
 def distance(coord1, coord2):
@@ -298,11 +305,51 @@ def get_placed_distances(name, target_names, placed):
     distances = {}
     for pc, data in placed.items():
         if pc != name and pc in target_names and "pos" in data:
-            distance = get_nearest(pos, size, data.pos, data.size_mod)[0]
-            distances[distance] = distances.get(distance, []) + [pc]
+            nearest = get_nearest(pos, size, data.pos, data.size_mod)
+            distances[nearest[0]] = distances.get(nearest[0], []) + [
+                (pc, nearest[1], nearest[2])
+            ]
     dkeys = list(distances.keys())
     dkeys.sort()
-    return distances
+    return {k: distances[k] for k in dkeys}
+
+
+def get_move_coords(name, placed, width, height):
+    size = placed[name].size_mod
+    rbound, bbound = width - size, height - size
+    occupied = set()
+    unoccupied = set()
+    for pc_name, pc in placed.items():
+        if pc_name == name:
+            continue
+        occupied.update(occupied_box(size, pc.pos, pc.size_mod))
+        unoccupied.update(melee_box(size, pc.pos, pc.size_mod))
+    unoccupied -= occupied
+    unoccupied = [
+        p for p in unoccupied if (0 <= p[0] < rbound) and (1 <= p[1] <= bbound)
+    ]
+    return unoccupied, occupied
+
+
+def filter_occupied(name, placed, distances, move_coords, max_targets=1):
+    targets = {}
+    size = placed[name].size_mod
+    for d, dist_targets in distances.items():
+        for data in dist_targets:
+            target = data[0]
+            melee = {}
+            mbox = melee_box(size, placed[target].pos, placed[target].size_mod)
+            for p in move_coords:
+                if p in mbox:
+                    mdist = round(distance(placed[name].pos, p)) * 5
+                    melee[mdist] = melee.get(mdist, []) + [p]
+            if melee:
+                mkeys = list(melee.keys())
+                mkeys.sort()
+                targets[target] = {"distance": d, "melee": {k: melee[k] for k in mkeys}}
+                if max_targets <= len(targets):
+                    return targets
+    return targets
 
 
 # Sizes: <=M: 0, L: 1, H: 2, G: 3
@@ -319,11 +366,8 @@ def box(top_left, size=0, include_inner=False):
     x_range = range(max(x0, 0), x1 + 1)
     y_range = range(max(y0 + 1, 1), y1)
     box_coords = [(x, y) for x in x_range for y in (y0, y1) if 0 < y]
-    return box_coords + [
-        (x, y)
-        for x in (x_range if include_inner else (max(x0, 0), x1))
-        for y in y_range
-    ]
+    x_range = x_range if include_inner else (max(x0, 0), x1)
+    return box_coords + [(x, y) for x in x_range for y in y_range]
 
 
 def out_box(top_left, size=0, include_inner=False):
@@ -332,9 +376,9 @@ def out_box(top_left, size=0, include_inner=False):
 
 
 # Sorts by distance if C1 is not None
-def melee_box(size1, c2, size2, c1=None, mask=[]):
+def melee_box(size1, c2, size2, c1=None):
     top_left = subtract_coords(c2, (size1 + 1, size1 + 1))
-    melee_box = [c for c in box(top_left, size1 + size2 + 2) if (c not in mask)]
+    melee_box = box(top_left, size1 + size2 + 2)
     if c1:
         melee_box.sort(key=lambda c: distance(c1, c))
     return melee_box
@@ -343,38 +387,6 @@ def melee_box(size1, c2, size2, c1=None, mask=[]):
 def occupied_box(size1, c2, size2):
     occ_top_left = subtract_coords(c2, (size1, size1))
     return box(occ_top_left, size1 + size2, True)
-
-
-def get_occupied_coords(my_name="", my_size=0):
-    occupied = set()
-    for name, data in get_all_map_combatants().items():
-        if name and (name == my_name):
-            continue
-        if "location" in data:
-            pos = loc_to_coords(data["location"])
-            size = get_size_mod(data.get("size", "M"))
-            occupied.update(occupied_box(my_size, pos, size))
-    return occupied
-
-
-def get_occupants(my_name="", my_size=0):
-    occupants = {}
-    map_combatants = get_all_map_combatants()
-    for name, data in map_combatants.items():
-        if name and (name == my_name):
-            continue
-        if "location" in data:
-            pos = loc_to_coords(data["location"])
-            size = get_size_mod(data.get("size", "M"))
-            occupants[name] = {
-                "pos": pos,
-                "size": size,
-            }
-    return occupants
-
-
-def remove_coords(coords, remove_coords):
-    return [c for c in coords if c not in remove_coords]
 
 
 def center(top_left, size):
