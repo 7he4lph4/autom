@@ -1,0 +1,59 @@
+<drac2>
+pref, al = ctx.prefix, ctx.alias
+cmd = pref + al
+args = &ARGS&
+
+if combat():
+    team = 1
+    if 0 < len(args) and args[0].isdigit():
+        team = int(args.pop(0))
+    elif combat().me:
+        for effect in combat().me.effects:
+            if effect.name.startswith("Team "):
+                team = int("".join([e for e in effect if e.isdigit()]))
+                break
+
+if len(args) < 1:
+    return (
+        'embed -title "Set Teams for Automation"'
+        + ' -desc "Players without an assigned team, as well as monsters with the `Ally (auto)` effect, will default to Team 1.'
+        + " Monsters without an assigned team will default to the highest team number greater than 1, or Team 2 if there are none."
+        + "\n\n**Usage Examples:**"
+        + f"\n- `{cmd} as1` assigns AS1 to your team."
+        + f"\n- `{cmd} 1 as1` assigns AS1 to Team 1."
+        + f'\n- `{cmd} 2 \\"all:awakened shrub\\"` assigns all Awakened Shrubs to Team 2.'
+        + f'\n- `{cmd} 3 as1 all:badger` assigns AS1 and all Badgers to Team 3.'
+        + f'\n- `{cmd} 0 \\"all:awakened shrub\\"` resets teams for all Awakened Shrubs."'
+    )
+
+if not combat():
+    err("Channel is not in combat!")
+
+monsters, names = [], []
+for a in args:
+    if a.startswith("all:"):
+        monsters.append(a[4:].lower())
+    else:
+        names.append(a.lower())
+
+teammates = []
+for c in combat().combatants:
+    if (
+        c.monster_name and c.monster_name.lower() in monsters
+    ) or c.name.lower() in names:
+        for effect in c.effects:
+            if effect.name.startswith("Ally (auto)") or all(
+                e in effect.name for e in ["Team", "(auto)"]
+            ):
+                c.remove_effect(effect.name)
+        if 0 < team:
+            c.add_effect("Ally (auto)" if team == 1 else f"Team {team} (auto)")
+        teammates.append(c.name)
+
+desc_str = f"Added combatants to Team {team}:" if 0 < team else "Reset combatant teams:"
+return (
+    "multiline"
+    + (f'\n!embed -title "Team Set" -desc "**{desc_str}**\n' + ", ".join(teammates))
+    + '"\n!i list'
+)
+</drac2>

@@ -358,6 +358,26 @@ def get_size_mod(size):
     return size_map.get(size[0].upper(), 0)
 
 
+def gbox(top_left, size=0, include_inner=False):
+    if size < 1:
+        return [top_left]
+    x0, y0 = int(top_left[0]), int(top_left[1])
+    x1, y1 = x0 + size, y0 + size
+    y_range = range(max(y0 + 1, 1), y1)
+    box = {x0: y_range}
+    if 1 < size:
+        x_range = range(x0 + 1, x1)
+        y = list(y_range) if include_inner else (y0, y1)
+        box.update({x: y for x in x_range})
+    box[x1] = y_range
+    return
+
+
+def gmelee(size1, c2, size2):
+    top_left = (c2[0] - size1 + 1, c2[1] - size1 + 1)
+    mbox = gbox(top_left, size1 + size2 + 1)
+
+
 def box(top_left, size=0, include_inner=False):
     if size <= 0:
         return [top_left]
@@ -368,11 +388,6 @@ def box(top_left, size=0, include_inner=False):
     box_coords = [(x, y) for x in x_range for y in (y0, y1) if 0 < y]
     x_range = x_range if include_inner else (max(x0, 0), x1)
     return box_coords + [(x, y) for x in x_range for y in y_range]
-
-
-def out_box(top_left, size=0, include_inner=False):
-    out_top_left = subtract_coords(top_left, (1, 1))
-    return box(out_top_left, size + 2, include_inner)
 
 
 # Sorts by distance if C1 is not None

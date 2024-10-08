@@ -90,6 +90,21 @@ map_state = {
 }
 width, height = mapl.parse_mapsize(map_state.get("size"))
 placed, unplaced = mapl.get_placed_combatants()
+teams = {}
+for co in c.combatants:
+    if co.name.lower() in ["dm", "map", "lair"] or autolib.isGhost(c, co):
+        continue
+    for effect in co.effects:
+        if effect.name.startswith("Ally (auto)"):
+            teams[1] = teams.get(1, []) + [co.name]
+            break
+        if all(e in effect.name for e in ["Team", "(auto)"]):
+            team = int("".join([e for e in effect.name if e.isdigit()]))
+            teams[team] = teams.get(team, []) + [co.name]
+            break
+    else:
+        team = 1 if not autolib.isMonster(co) else max(max(teams, default=2),2)
+        teams[team] = teams.get(team, []) + [co.name]
 out = {}
 
 def place_combatants():
@@ -464,7 +479,7 @@ def find_best_target(monster, target_names, move_coords=[], distances={}, max_su
     # If all targets have large monsters nearby, choose a random target from the valid ones (those with HP > 0)
     return randchoice([t.name for t, _ in target_hp]) if target_hp else None
 
-def process_monster_turn(indexed_combatant, targets, out, overlays, desc, command_list, snippets=""):
+def process_monster_turn(indexed_combatant, out, overlays, desc, command_list, snippets=""):
     monster = c.get_combatant(indexed_combatant)
     if not monster:
         desc.append(f"Could not find combatant: {indexed_combatant}")
@@ -474,8 +489,8 @@ def process_monster_turn(indexed_combatant, targets, out, overlays, desc, comman
     curr_hp = monster.hp
     
     # Fetch monster data if not already stored
-    if not mobl.get_stored_monster_data(monster_name):
-        mobl.fetch_and_store_monster_data()
+    # if not mobl.get_stored_monster_data(monster_name):
+    #     mobl.fetch_and_store_monster_data()
 
     # Check if the monster is already dead at the start of its turn
     if monster.hp <= 0:
@@ -490,6 +505,12 @@ def process_monster_turn(indexed_combatant, targets, out, overlays, desc, comman
     location = map_data["location"]
     
     phrase = ""
+    team = 1
+    for t in teams:
+        if indexed_combatant in teams[t]:
+            team = t
+            break
+    targets = [co for t in teams if t != team for co in teams[t]]
     
     # Check if map is present
     if map_attach and location:
@@ -736,13 +757,11 @@ curr_combatant = c.current
 # map_url = mapl.generate_map_image(overlays)
 # command_list.append(f'''{pref}embed -title "Monsters are deciding their actions..." -image "{map_url}" -footer "{footer}"''')
 
-if inp.startswith('o'):
+snippets = " ".join(&ARGS&)
+if inp.lower() in ('o', 'once'):
     # Implement the 'once' sub-command
     if current_init in monster_names:
-        target_list = party_names if autolib.isMonster(c.current) else monster_names
-        targets = [t for t in target_list if not autolib.isGhost(c, t)]
-        snippets = " ".join(&ARGS&)[1:]
-        process_monster_turn(current_init, targets, out, overlays, desc, command_list, snippets)
+        process_monster_turn(current_init, out, overlays, desc, command_list, snippets[1:])
         # Update map_state["combatants"] with 'out'
         map_state["combatants"] = out
         if overlays:
@@ -788,10 +807,7 @@ for indexed_combatant in indexed_cname_list:
         if not note or not 'location' in note:
             process_map_absentee_monster_turn(indexed_combatant, command_list)
         else:
-            target_list = party_names if current_enemy else monster_names
-            targets = [t for t in target_list if not autolib.isGhost(c, t)]
-            snippets = " ".join(&ARGS&)[0:]
-            process_monster_turn(indexed_combatant, targets, out, overlays, desc, command_list, snippets)
+            process_monster_turn(indexed_combatant, out, overlays, desc, command_list, snippets)
             # toggle_monster_color(monster, 'r' if current_enemy else 'b')
     else: # Handle non-monster combatants
         if indexed_combatant.casefold() in ['map', 'dm', 'lair'] and c.get_combatant(indexed_combatant).init == 20:
