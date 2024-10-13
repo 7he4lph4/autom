@@ -62,7 +62,7 @@ def remove_stored_monster_data(monster_name):
 def get_monster_speed(monster_name):
     speed_data = get_stored_monster_data(monster_name, "Speed")
     if speed_data:
-        walk_speed = fly_speed = 0
+        walk_speed, fly_speed = 0, 0
         speed_parts = speed_data.lower().replace(",", "").split()
         for i, part in enumerate(speed_parts):
             if part.isdigit():

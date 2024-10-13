@@ -1,0 +1,86 @@
+<drac2>
+args = &ARGS&
+pref, al = ctx.prefix, ctx.alias
+cmd = pref + al
+
+if combat():
+    team = 1
+    if 0 < len(args):
+        if args[0].isdigit():
+            team = int(args.pop(0))
+        if "ghost" in args[0].casefold():
+            team = "ghost"
+        elif combat().me:
+            for effect in combat().me.effects:
+                if effect.name.startswith("Team "):
+                    team = int("".join([e for e in effect if e.isdigit()]))
+                    break
+
+if len(args) < 1:
+    return (
+        'embed -title "Set Teams for Automation" -desc "'
+        + f"""
+Players without an assigned team, as well as monsters with the `Ally (auto)` effect, will default to Team 1. Monsters without an assigned team will default to the highest team number greater than 1, or Team 2 if there are none.
+
+**Usage Examples:**
+- `{cmd} as1` assigns AS1 to your team.
+- `{cmd} 1 as1` assigns AS1 to Team 1.
+- `{cmd} 2 \\"all:awakened shrub\\"` assigns all Awakened Shrubs to Team 2.
+- `{cmd} 3 as1 all:badger` assigns AS1 and all Badgers to Team 3.
+- `{cmd} 0 \\"all:awakened shrub\\"` resets teams for all Awakened Shrubs.
+
+Ghosts are ignored by automation:
+- `{cmd} ghost \\"all:awakened shrub\\"` sets all Awakened Shrubs to Ghost.\nRun the command again to remove the Ghost effect."""
+        + f'" -footer "{cmd}"'
+    )
+
+if not combat():
+    err("Channel is not in combat!")
+
+monsters, names = [], []
+for a in args:
+    if a.startswith("all:"):
+        monsters.append(a[4:].lower())
+    else:
+        names.append(a.lower())
+
+teammates = [
+    c
+    for c in combat().combatants
+    if c.name.lower() in names
+    or (c.monster_name and c.monster_name.lower() in monsters)
+]
+
+command = 'multiline\n!embed -title "'
+if team == "ghost":
+    ghost = False
+    for t in teammates:
+        for e in t.effects:
+            if "Ghost (auto)" in e.name:
+                t.remove_effect(e.name)
+                break
+        else:
+            ghost = True
+    if ghost:
+        for t in teammates:
+            t.add_effect("Ghost (auto)")
+        command += 'Set Ghosts" -desc "**Set Ghosts ignored by automation:**\n'
+    else:
+        command += 'Unset Ghosts" -desc "**Unset Ghosts ignored by automation:**\n'
+else:
+    for t in teammates:
+        for effect in t.effects:
+            if "Ally (auto)" in effect.name or all(
+                e in effect.name for e in ["Team", "(auto)"]
+            ):
+                t.remove_effect(effect.name)
+        if 0 < team:
+            t.add_effect("Ally (auto)" if team == 1 else f"Team {team} (auto)")
+    command += f"Set Team {team}" if 0 < team else "Reset Teams"
+    command += (
+        f'" -desc "Added combatants to Team {team}:\n'
+        if 0 < team
+        else f'" -desc "Reset combatant Teams:\n'
+    )
+return command + ", ".join([t.name for t in teammates]) + '"\n!i list'
+</drac2>
