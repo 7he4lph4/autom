@@ -19,7 +19,7 @@ using(
     core = "49f5f503-1c00-4f24-ba43-92e65c2c2fb6",
     presets = "c14e4526-4acb-4964-8ba9-f6861617ffdf",
     mapl = "4b5633ff-7082-4411-95b3-50970c30e832",
-    mobl = "a7863890-e522-4116-a79f-2fb764a83f77",
+    mobl = "65c27eae-11c3-4b5c-90e5-472bc49f0037",
     targl = "f8369cc0-8ab0-42a5-8dfd-4ab7f34c0e61",
     helpl = "aacef7e2-fb6a-4786-9d26-193ed45e4916"
 )
@@ -37,7 +37,7 @@ desc_text = helpl.help_text
 if not c or inp == 'help' or inp == '?':
     title = f'{cmd} works best when used with a combat initiative full of player characters and monsters!'
     desc = 'Please start initiative and add your players and  monsters.'
-    return f'embed -title "{title}" -desc "{desc_text}" -footer "{footer}"'
+    return f'embed -title "{title}" -desc "{desc_text}"'
     
 
 # INITIALIZING COMBAT AND MAP
@@ -45,7 +45,7 @@ if not c or inp == 'help' or inp == '?':
 
 if inp1.lower() == 'lair':
     command_list.append(f'{pref}i add 0 Lair -p 20')
-    command_list.append(f'''{pref}embed -title "A Lair Object has been added!" -desc "A Lair object was added at Initiative 20 to run monsters' Lair Actions." -color <color> -footer "{footer}"''')
+    command_list.append(f'''{pref}embed -title "A Lair Object has been added!" -desc "A Lair object was added at Initiative 20 to run monsters' Lair Actions." -color <color>''')
     return command + nl.join(command_list)
 
 combatants = c.combatants
@@ -76,12 +76,12 @@ if not map_attach:
         \nIf you are fighting a monster with Lair Actions, add a Lair object with:
         `{cmd} lair`\n\nOtherwise, a player must join the combat initiative using `{pref}i join`
         """
-        return f'embed -title "Map Setup Pending:" -desc "{desc}" -color <color> -footer "{footer}"'
+        return f'embed -title "Map Setup Pending:" -desc "{desc}" -color <color>'
     
     map_attach.add_effect("map", attacks=[{"attack": {"name":"map", "automation": [{"type":"text", "text":""}], "_v":2,}}])
     
     desc = helpl.no_map
-    return f'embed -title "Map Settings attached to {map_attach.name}!" -desc "{desc}" -color <color> -footer "{footer}"'
+    return f'embed -title "Map Settings attached to {map_attach.name}!" -desc "{desc}" -color <color>'
 map_state = {
     "current_map": None, 
     "size": map_info.get("size", [20, 20]),
@@ -108,14 +108,19 @@ for co in c.combatants:
 out = {}
 
 def place_combatants():
+
     size_groups = {"G": [], "H": [], "L": [], "M": []}
     for upc, data in unplaced.items():
+
+        # Fetch monster data if not already stored
+        if not mobl.get_stored_monster_data(data.combatant.monster_name):
+            mobl.fetch_and_store_monster_data()
+
         size = data.get("size")
         if not size:
             size = "M"
             if data.combatant.monster_name:
-                mon_data = mobl.get_monster_data(data.combatant.monster_name, 'meta')
-                size = mon_data.split()[0] if mon_data else size
+                size = mobl.get_monster_size(data.combatant.monster_name)
             data.update({"size": size, "size_mod": mapl.get_size_mod(size)})
         (size_groups[size[0]] if size[0] in "GHL" else size_groups["M"]).append(upc)
     
@@ -169,12 +174,12 @@ if (inp1.lower() in ['m', 'map']) or not map_info:
     if unplaced:
         place_combatants()
     map_url = mapl.generate_map_image()
-    return f'embed {message} -image "{map_url}" -footer "{footer}"'
+    return f'embed {message} -image "{map_url}"'
 
 if unplaced:
     place_combatants()
     map_url = mapl.generate_map_image()
-    command_list.append(f'{pref}embed -title "Map Setup Complete!" -desc "All combatants have been placed on the map." -image "{map_url}" -footer "{footer}"')
+    command_list.append(f'{pref}embed -title "Map Setup Complete!" -desc "All combatants have been placed on the map." -image "{map_url}"')
     return command + nl.join(command_list)  
 
 if not party_names:
@@ -187,7 +192,7 @@ if c.current is None:
         command_list.append(f'{pref}i n')
     else:
         desc_text = f'_No monsters found in initiative!_\n\nThat\'s fine, feel free to add them any time and run `{cmd}` every time it\'s the monster\'s turn!'
-    command_list.append(f"""{pref}embed -title "{title}" -desc "{desc_text}" -footer '{footer}'""")
+    command_list.append(f"""{pref}embed -title "{title}" -desc "{desc_text}" """)
     return command + nl.join(command_list)   
 
 current_init = c.current.name
@@ -196,13 +201,13 @@ current_init = c.current.name
 if current_init.casefold() in ['map', 'dm', 'lair'] and c.turn_num == 20:
     title = f'Waiting on Lair Action :dragon:'
     desc_text = f'Use `{pref}i n` if there are no actions to take this round!'
-    return f"""embed -title "{title}" -desc "{desc_text}" -footer "{footer}" """
+    return f"""embed -title "{title}" -desc "{desc_text}" """
 elif autolib.hasMonsterGroup(c) or not c.current.monster_name:
     title = f'It\'s a player turn! :mage:'
     desc_text = f"Waiting on **{current_init}** to play their turn!"
     if not get_uvar('mapStates'):
         desc_text += helpl.move_help
-    return f"""embed -title "{title}" -desc "{desc_text}" -footer "{footer}" """
+    return f"""embed -title "{title}" -desc "{desc_text}" """
    
         
 # MAP INITIALIZATION COMPLETE
@@ -488,15 +493,11 @@ def process_monster_turn(indexed_combatant, out, overlays, desc, command_list, s
     monster_name = monster.monster_name
     curr_hp = monster.hp
     
-    # Fetch monster data if not already stored
-    # if not mobl.get_stored_monster_data(monster_name):
-    #     mobl.fetch_and_store_monster_data()
-
     # Check if the monster is already dead at the start of its turn
     if monster.hp <= 0:
         remove_dead_monster(c, monster, out, desc)
         map_url = mapl.generate_map_image(overlays)
-        command_list.append(f'{pref}embed -title "Skipping dead monster: {monster.name}" -desc "{monster.name} has been defeated and removed from the map. Its turn will be skipped." -image "{map_url}" -footer "{footer}"')
+        command_list.append(f'{pref}embed -title "Skipping dead monster: {monster.name}" -desc "{monster.name} has been defeated and removed from the map. Its turn will be skipped." -image "{map_url}"')
         command_list.append(f'{pref}i n')  # Skip to next turn
         return
 
@@ -514,6 +515,9 @@ def process_monster_turn(indexed_combatant, out, overlays, desc, command_list, s
     
     # Check if map is present
     if map_attach and location:
+        monster_speed = mobl.get_monster_speed(monster_name)[0]
+        monster_move_verb = mobl.get_monster_speed(monster_name)[1]
+
         start_pos, size_m = map_data["pos"], map_data["size_mod"]
         
         # Get occupied positions to avoid collisions
@@ -536,8 +540,6 @@ def process_monster_turn(indexed_combatant, out, overlays, desc, command_list, s
                 end_pos = mapl.loc_to_coords(best_position)
                 distance_to_position = mapl.distance(start_pos, end_pos) * 5
 
-                monster_speed = mobl.get_monster_speed(monster_name)[0]
-
                 # Move the monster if needed
                 if distance_to_position > 0:
                     move_distance = min(monster_speed, distance_to_position)
@@ -546,12 +548,12 @@ def process_monster_turn(indexed_combatant, out, overlays, desc, command_list, s
                     if arrow:
                         overlays.append(arrow)
                     location = new_location
-                    desc.append(f"{indexed_combatant} moves {int(move_distance)} ft. towards the optimal position for its AoE attack.")
+                    desc.append(f"{indexed_combatant} uses {int(move_distance)} ft. out of their {monster_speed} ft. to {'move' if monster_move_verb == 'walk' else '*fly*'} towards an optimal position for its AoE attack.")
 
                     # Display the updated map after movement
                     map_state["combatants"] = out
                     map_url = mapl.generate_map_image(overlays)
-                    command_list.append(f'{pref}embed -title "Monster Movement: {monster.name}" -desc "{desc[-1]}" -image "{map_url}" -footer "{footer}"')
+                    command_list.append(f'{pref}embed -title "Monster Movement: {monster.name}" -desc "{desc[-1]}" -image "{map_url}"')
 
                 # Adjust the AoE position for cone and line attacks
                 if aoe_attack['shape'] in ['cone', 'line']:
@@ -565,7 +567,7 @@ def process_monster_turn(indexed_combatant, out, overlays, desc, command_list, s
 
                     # Display the map with the AoE overlay
                     map_url = mapl.generate_map_image(overlays)
-                    command_list.append(f'{pref}embed -title "AoE Attack: {monster.name}" -desc "{desc[-1]}" -image "{map_url}" -footer "{footer}"')
+                    command_list.append(f'{pref}embed -title "AoE Attack: {monster.name}" -desc "{desc[-1]}" -image "{map_url}"')
 
                     # Find targets within the AoE
                     affected_targets = get_targets_in_aoe(location, aoe_attack, potential_targets)
@@ -592,7 +594,6 @@ def process_monster_turn(indexed_combatant, out, overlays, desc, command_list, s
 
         target_location = placed[chosen_target].get('location', None)
         if target_location:
-            monster_speed = mobl.get_monster_speed(monster_name)[0]
             max_attack_reach = get_max_attack_reach(monster.attacks)
             
             target_pos = placed[chosen_target]['pos']
@@ -631,12 +632,12 @@ def process_monster_turn(indexed_combatant, out, overlays, desc, command_list, s
                         mapl.update_position(monster, placed, new_pos, out)
                         if arrow:
                             overlays.append(arrow)
-                        desc.append(f"{indexed_combatant} moves {int(move_distance)} ft. {movement_direction} {chosen_target} for a better vantage point.")
+                        desc.append(f"{indexed_combatant} uses {int(move_distance)} ft. out of their {monster_speed} ft. to {'move' if monster_move_verb == 'walk' else '*fly*'} {movement_direction} {chosen_target} for a better vantage point.")
                         
                         # After movement, display the updated map
                         map_state["combatants"] = out
                         map_url = mapl.generate_map_image(overlays)
-                        command_list.append(f'{pref}embed -title "Monster Movement: {monster.name}" -desc "{desc[-1]}" -image "{map_url}" -footer "{footer}"')
+                        command_list.append(f'{pref}embed -title "Monster Movement: {monster.name}" -desc "{desc[-1]}" -image "{map_url}"')
                     else:
                         desc.append(f"{indexed_combatant} holds position, already at an ideal vantage point.")
                     
@@ -659,9 +660,9 @@ def process_monster_turn(indexed_combatant, out, overlays, desc, command_list, s
                     if new_pos != start_pos:
                         overlays.append(create_arrow_overlay(go_distance, location, new_location))
                     go_distance = round(mapl.distance(start_pos, new_pos)) * 5
-                    desc.append(f"{indexed_combatant} dashes {int(go_distance)} ft. towards {chosen_target}.")
+                    desc.append(f"{indexed_combatant} dashes {int(go_distance)} ft. out of their {monster_speed*2} ft. dash distance, towards {chosen_target}.")
                     map_url = mapl.generate_map_image(overlays)
-                    command_list.append(f'{pref}embed -title "Monster Dashes: {monster.name}" -desc "{desc[-1]}" -image "{map_url}" -footer "{footer}"')
+                    command_list.append(f'{pref}embed -title "Monster Dashes: {monster.name}" -desc "{desc[-1]}" -image "{map_url}"')
                     command_list.append(f'{pref}i n')
                     return
                 else: # Monster can reach target  
@@ -669,12 +670,12 @@ def process_monster_turn(indexed_combatant, out, overlays, desc, command_list, s
                     mapl.update_position(monster, placed, go_coords, out)
                     overlays.append(create_arrow_overlay(go_distance, location, new_location))
                     distance = round(mapl.get_nearest(go_coords, size_m, target_pos, target_size_mod)[0])
-                    desc.append(f"{indexed_combatant} moves {int(go_distance)} ft. towards {chosen_target}.")
+                    desc.append(f"{indexed_combatant} uses {int(go_distance)} ft. out of their {monster_speed} ft. to {'move' if monster_move_verb == 'walk' else '*fly*'} towards {chosen_target}.")
                     
                 # After movement, display the updated map
                 map_state["combatants"] = out
                 map_url = mapl.generate_map_image(overlays)
-                command_list.append(f'{pref}embed -title "Monster Movement: {monster.name}" -desc "{desc[-1]}" -image "{map_url}" -footer "{footer}"')
+                command_list.append(f'{pref}embed -title "Monster Movement: {monster.name}" -desc "{desc[-1]}" -image "{map_url}"')
             else:
                 phrase = f"\nHolding Position to Attack!"
         else:
@@ -715,7 +716,7 @@ def process_monster_turn(indexed_combatant, out, overlays, desc, command_list, s
     if monster.hp <= 0:
         remove_dead_monster(c, monster, out, desc)
         map_url = mapl.generate_map_image(overlays)
-        command_list.append(f'{pref}embed -title "Skipping dead monster: {monster_name}" -desc "{monster_name} has been defeated and removed from the map. Its turn will be skipped." -image "{map_url}" -footer "{footer}"')
+        command_list.append(f'{pref}embed -title "Skipping dead monster: {monster_name}" -desc "{monster_name} has been defeated and removed from the map. Its turn will be skipped." -image "{map_url}"')
         return
 
 def remove_dead_monster(combat, monster, out, desc):
@@ -738,7 +739,7 @@ def toggle_monster_color(monster, new_color):
 def process_map_absentee_monster_turn(indexed_combatant, command_list):
     title = f'New monster detected: {indexed_combatant}'
     desc_text = f'This monster is not currently on the map, please place the monster\'s token on the map manually using: ```{pref}map -t {indexed_combatant}|C4```\nReplace `C4` to any location you like.'
-    command_list.append(f"""{pref}embed -title "{title}" -desc "{desc_text}" -footer '{footer}'""")
+    command_list.append(f"""{pref}embed -title "{title}" -desc "{desc_text}" """)
     command_list.append(f'{pref}i n')
 
 # Initialize overlays and descriptions
@@ -755,7 +756,7 @@ indexed_cname_list = []
 curr_combatant = c.current
 
 # map_url = mapl.generate_map_image(overlays)
-# command_list.append(f'''{pref}embed -title "Monsters are deciding their actions..." -image "{map_url}" -footer "{footer}"''')
+# command_list.append(f'''{pref}embed -title "Monsters are deciding their actions..." -image "{map_url}"''')
 
 snippets = " ".join(&ARGS&)
 if inp.lower() in ('o', 'once'):
@@ -766,7 +767,7 @@ if inp.lower() in ('o', 'once'):
         map_state["combatants"] = out
         if overlays:
             map_url = mapl.generate_map_image(overlays)
-            map_embed = f'{pref}embed -title "Updated Map" -desc "Monster movements displayed" -image "{map_url}" -footer "{footer}"'
+            map_embed = f'{pref}embed -title "Updated Map" -desc "Monster movements displayed" -image "{map_url}"'
             command_list.append(map_embed)
         return command + nl.join(command_list)
     
@@ -782,16 +783,16 @@ if len(indexed_cname_list) > 4:
 
 current_enemy = autolib.isMonster(c.current)
 for indexed_combatant in indexed_cname_list:
-    if len(command_list) > 12:
+    if len(command_list) > 10:
         title = f'Whoa! You\'re pushing the limits of Avrae right now!'
         desc_text = f'Unfortunately, this is the maximum number of attacks you can automate to prevent unnecessarily over-stressing Avrae!\n\n**But no worries, you can simply use `{cmd}` again now to repeat the cycle!**'
-        while len(command_list) > 12:
+        while len(command_list) > 10:
             command_list.reverse()
             last_n = command_list.index(f'{pref}i n')
             command_list = command_list[last_n+1:]
             command_list.reverse()
         command_list.append(f'{pref}i n')
-        command_list.append(f"""{pref}embed -title "{title}" -desc "{desc_text}" -footer '{footer}'""")
+        command_list.append(f"""{pref}embed -title "{title}" -desc "{desc_text}" """)
         command += nl.join(command_list)
         return command
     
@@ -800,7 +801,7 @@ for indexed_combatant in indexed_cname_list:
         if autolib.isMonster(monster) != current_enemy:
             title = f'''Automation Complete! It\'s the other side's turn now! :mage:'''
             desc_text = f'Waiting on **{indexed_combatant}** to play their turn!'
-            command_list.append(f"""{pref}embed -title "{title}" -desc "{desc_text}" -footer '{footer}'""")
+            command_list.append(f"""{pref}embed -title "{title}" -desc "{desc_text}" """)
             return command + nl.join(command_list)
             
         note = mapl.parse_note(monster.note)
@@ -820,7 +821,7 @@ for indexed_combatant in indexed_cname_list:
         else:
             title = f'Automation Complete! It\'s a player turn now! :mage:'
             desc_text = f'Waiting on **{indexed_combatant}** to play their turn!'
-        command_list.append(f"""{pref}embed -title "{title}" -desc "{desc_text}" -footer '{footer}'""")
+        command_list.append(f"""{pref}embed -title "{title}" -desc "{desc_text}" """)
         break
 
 # Update map_state["combatants"] with 'out'
@@ -828,7 +829,7 @@ map_state["combatants"] = out
 
 if overlays:
     map_url = mapl.generate_map_image(overlays)
-    map_embed = f'{pref}embed -title "Monster Movement Summary" -desc "Monster movements so far:" -image "{map_url}" -footer "{footer}"'
+    map_embed = f'{pref}embed -title "Monster Movement Summary" -desc "Monster movements so far:" -image "{map_url}"'
     command_list.append(map_embed)
 return command + nl.join(command_list)
 </drac2>
