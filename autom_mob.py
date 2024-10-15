@@ -3,27 +3,57 @@
 c = combat()
 
 
+# Pre-prepared buckets for monsters based on the first letter of their name
+monster_buckets = {
+    'm': ["38132517-9fdc-4d90-8199-1b1c14efa134", "dff68592-2750-478a-9da0-d90f71d7ff60", "f34b0e24-c7c5-4958-b0a1-069c38ed19cf"],
+    'q': ["86cd6230-162b-43a7-af64-350a65f1ba69", "f168a43a-3bd7-4f2f-9fd3-5647ee0acbc5"],
+    'r': ["86cd6230-162b-43a7-af64-350a65f1ba69", "766a2982-25c7-495f-b8fa-3a3020439531"],
+    'y': ["6d8cf226-8c2f-40aa-9fa8-d64a41847f11", "0c023161-c149-4485-9530-96ee05195570"],
+    'z': ["6d8cf226-8c2f-40aa-9fa8-d64a41847f11"],
+    'a': ["12bb091c-2db5-45bf-aaf5-4943c81ab2bf", "f49e0dfc-f28e-422c-be7e-c315b9e9c3b3", "b8217fe7-ef64-4d93-bc61-6df33f9fa3f6", "60e3c85b-7b54-4f41-a70a-d94f8da24064"],
+    'i': ["e031ddab-5ecd-4fe2-98cf-dbbd6b077b1d"],
+    'j': ["e031ddab-5ecd-4fe2-98cf-dbbd6b077b1d"],
+    'k': ["e031ddab-5ecd-4fe2-98cf-dbbd6b077b1d", "dff68592-2750-478a-9da0-d90f71d7ff60"],
+    's': ["b6a4a026-5ffb-435b-92c5-b7c8a6d3d389", "766a2982-25c7-495f-b8fa-3a3020439531", "b1d363be-bea7-4467-b213-b71b213450aa", "24554189-9fb3-474a-91eb-a4dd3606bdf9"],
+    't': ["b6a4a026-5ffb-435b-92c5-b7c8a6d3d389", "5dc231e5-6af7-4350-9886-de5311f0eca1"],
+    'l': ["dff68592-2750-478a-9da0-d90f71d7ff60"],
+    'c': ["1e09647a-fc2a-421a-8c74-d223c80a0fd6", "120a0122-cb06-43e0-ae36-439adfc30c16", "19700ba3-51df-4e17-b3e8-c06c9d481767"],
+    'd': ["147c2f03-fa4e-40ba-9572-18b4752acc7d", "120a0122-cb06-43e0-ae36-439adfc30c16", "8b186328-857c-432d-a3e8-ad486c08e62b"],
+    'w': ["0c023161-c149-4485-9530-96ee05195570", "c0eb3c00-5b2d-44ea-bfc6-f37370afd945"],
+    'x': ["0c023161-c149-4485-9530-96ee05195570"],
+    'e': ["1ee78a97-8af6-4622-bbdb-1afda52b9eae", "8b186328-857c-432d-a3e8-ad486c08e62b"],
+    'f': ["1ee78a97-8af6-4622-bbdb-1afda52b9eae", "45f6a963-9833-4437-9244-87708ae6ff0f"],
+    'u': ["5dc231e5-6af7-4350-9886-de5311f0eca1"],
+    'v': ["5dc231e5-6af7-4350-9886-de5311f0eca1", "c0eb3c00-5b2d-44ea-bfc6-f37370afd945"],
+    'h': ["c7f6f98c-d812-43af-a1ca-2036a56c6c5e", "bd61c879-e6a7-49c1-af5b-022d7596501a"],
+    'o': ["f168a43a-3bd7-4f2f-9fd3-5647ee0acbc5", "f34b0e24-c7c5-4958-b0a1-069c38ed19cf"],
+    'p': ["f168a43a-3bd7-4f2f-9fd3-5647ee0acbc5"],
+    'b': ["19700ba3-51df-4e17-b3e8-c06c9d481767", "6f830517-dfd1-491e-929a-a150a3adf053", "60e3c85b-7b54-4f41-a70a-d94f8da24064"],
+    'g': ["45f6a963-9833-4437-9244-87708ae6ff0f", "e0d7c5e7-f53a-4c45-8589-71936d9144b9", "bd61c879-e6a7-49c1-af5b-022d7596501a"],
+    'n': ["f34b0e24-c7c5-4958-b0a1-069c38ed19cf"]
+}
+
 def get_monster_data(monster_name, data_needed=None):
     if not monster_name:
         return None
-    db1 = "21934e43-b1aa-49b5-b252-68c0d78ed04c"
-    db2 = "24a1ea26-3c5b-4c2c-b528-113b857f9d34"
-    db3 = "9ca349e9-96f9-499d-8a2b-1359a5b989ba"
-    db4 = "48d73cd1-0224-4d8c-b723-d4a6bb4b2bf8"
-    db5 = "506d5812-54b6-47d8-aa48-03b0d9436999"
-    db6 = "710387e2-6c16-4b8f-9e04-65efa22a47b0"
-    db7 = "f638dc80-082c-4aeb-aa03-6c8801ad9449"
-    db = [db1, db2, db3, db4, db5, db6, db7]
-    for gvar_str in db:
-        db = load_json(get_gvar(gvar_str))
-        for mon_datum in db:
-            if monster_name.casefold() == mon_datum["name"].casefold():
-                obtained_monster_data = (
-                    mon_datum.get(data_needed, "") if data_needed else mon_datum
-                )
-                return obtained_monster_data
-    return False
 
+    # Determine the bucket based on the first letter of the monster_name
+    first_letter = monster_name[0].lower()
+    if first_letter not in monster_buckets:
+        return None
+
+    # Load only the relevant databases and search for the monster directly
+    relevant_gvars = monster_buckets[first_letter]
+    for gvar_id in relevant_gvars:
+        db = load_json(get_gvar(gvar_id))
+        if monster_name in db:
+            monster_data = db[monster_name]
+            # If specific data is needed, return that field
+            if data_needed:
+                return monster_data.get(data_needed, None)
+            return monster_data
+    
+    return None
 
 def fetch_and_store_monster_data():
     monster_data = {}
@@ -60,26 +90,29 @@ def remove_stored_monster_data(monster_name):
 
 
 def get_monster_speed(monster_name):
-    speed_data = get_stored_monster_data(monster_name, "Speed")
+    speed_data = get_stored_monster_data(monster_name, "speed")
     if speed_data:
-        walk_speed, fly_speed = 0, 0
-        speed_parts = speed_data.lower().replace(",", "").split()
-        for i, part in enumerate(speed_parts):
-            if part.isdigit():
-                if i > 0 and speed_parts[i - 1] == "fly":
-                    fly_speed = int(part)
-                else:
-                    walk_speed = int(part)
+        walk_speed = fly_speed = 0
+        # Split the string by commas first to handle each speed type separately
+        speed_parts = speed_data.lower().split(',')
+        for part in speed_parts:
+            speed_type, speed_value = part.split(':')
+            speed_value = int(speed_value.strip())
+            if 'walk' in speed_type:
+                walk_speed = speed_value
+            elif 'fly' in speed_type:
+                fly_speed = speed_value
         return max(walk_speed, fly_speed), "fly" if fly_speed > walk_speed else "walk"
+    
     return 30, "walk"  # Default speed if not found
 
 
 def get_monster_size(monster_name):
     monster_data = get_stored_monster_data(monster_name)
     if monster_data:
-        meta = monster_data.get("meta", "")
-        return meta.split()[0] if meta else "Medium"  # Default to Medium if not found
-    return "Medium"
+        meta = monster_data.get("size", "")
+        return meta if meta else "M"  # Default to M if not found
+    return "M"
 
 
 def get_aoe_attacks(monster_name):
