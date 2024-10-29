@@ -15,7 +15,8 @@ inp2 = "&2&"
 inp3 = "&3&"
 
 using(
-    autolib = "ec14bc6e-81e4-4df7-86e9-5d64ed2fa9b7",
+    #Old autolib DB: ec14bc6e-81e4-4df7-86e9-5d64ed2fa9b7
+    autolib = "40c06ebb-8487-4e0f-8cd5-e38d52364c53",
     core = "49f5f503-1c00-4f24-ba43-92e65c2c2fb6",
     presets = "c14e4526-4acb-4964-8ba9-f6861617ffdf",
     mapl = "4b5633ff-7082-4411-95b3-50970c30e832",
@@ -689,7 +690,7 @@ def process_monster_turn(indexed_combatant, out, overlays, desc, command_list, s
     # Attack logic
     if distance <= get_max_attack_reach(monster.attacks) and (curr_hp > 0 or autolib.onDeath(indexed_combatant, c.combatants) == "relentless"):
         # Multiattack logic
-        mon_actions = autolib.getActions(monster_name, autolib.buildDB())
+        mon_actions = autolib.getActions(monster_name)
         multi_atks = autolib.getMultiAttacks(mon_actions)
 
         if multi_atks:
@@ -745,10 +746,6 @@ def process_map_absentee_monster_turn(indexed_combatant, command_list):
 # Initialize overlays and descriptions
 overlays = []
 desc = []
-
-
-###### TEST SUITES ######
-
 
 # Main code execution starts here
 
