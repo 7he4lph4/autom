@@ -27,9 +27,10 @@ no_map = f"""
 > *Note*: `{cmd}` now comes with a new update integrating OTFBM map-based combat with a full AI battle engine! If you'd still like to use the old legacy version without maps support, worry not, it is still live on:
 > `{pref}autol` (`l` stands for legacy)
 \n__**Suggested Actions**__:
-\nIf you are fighting a monster with Lair Actions, add a Lair object with:
-`{cmd} lair`
-\nChoose from one of the many map presets:\n`{cmd} map list`
+- For monsters with Lair Actions, add a Lair object with `{cmd} lair`
+- Check out how to assign teams with `!team`.
+\nChoose from one of the many map presets:
+`{cmd} map list`
 ### __Quick Setup Tips__
 - **Random Map:** `{cmd}`
 - **Small Map**: `{cmd} map pit`

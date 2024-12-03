@@ -8,7 +8,8 @@ def get_target_lists(targs={}):
     master_list = [
         co
         for co in c.combatants
-        if co.name.lower() not in ["dm", "map", "lair"]
+        if co
+        and co.name.lower() not in ["dm", "map", "lair"]
         and (targs.get("dead", False) or 0 < co.hp)
     ]
     if targs.get("order", "_") in "hl":
