@@ -346,6 +346,22 @@ def find_adjacent_position(monster_location, target_position):
     closest_position = min(adjacent_positions, key=lambda p: ((p[0]-tx)**2 + (p[1]-ty)**2))
     return f"{alph[closest_position[0]]}{closest_position[1]}"
 
+def find_ranged_adjacent_position(monster_location, target_position, ideal_range):
+    ideal_cell_range = floor(ideal_range/5)
+    mx, my = alph.index(monster_location[0]), int(monster_location[1:])
+    tx, ty = alph.index(target_position[0]), int(target_position[1:])
+    
+    adjacent_positions = [
+        (mx-ideal_cell_range, my), (mx+ideal_cell_range, my), (mx, my-ideal_cell_range), (mx, my+ideal_cell_range),
+        (mx-ideal_cell_range, my-ideal_cell_range), (mx-ideal_cell_range, my+ideal_cell_range), (mx+ideal_cell_range, my-ideal_cell_range), (mx+ideal_cell_range, my+ideal_cell_range)
+    ]
+
+    mapX, mapY = width, height
+    adjacent_positions_filtered = core.filter(lambda coord: coord[0] >= 0 and coord[1] >= 1 and coord[0] < mapX and coord[1] <= mapY, adjacent_positions)
+    
+    closest_position = min(adjacent_positions, key=lambda p: ((p[0]-tx)**2 + (p[1]-ty)**2))
+    return f"{alph[closest_position[0]]}{closest_position[1]}"
+
 def get_targets_in_aoe(monster_location, aoe_attack, target_names):
     affected_targets = []
     for target_name in target_names:
@@ -627,7 +643,12 @@ def process_monster_turn(indexed_combatant, out, overlays, desc, command_list, s
                     if distance != ideal_distance:
                         move_distance = min(monster_speed, abs(distance - ideal_distance))
                         movement_direction = "towards" if distance > ideal_distance else "away from"
-                        new_location, arrow, new_pos = move_towards(start_pos, target_pos, move_distance, unoccupied)
+                        target_loc = mapl.coords_to_loc(target_pos)
+                        start_loc = mapl.coords_to_loc(start_pos)
+                        move_to_loc = find_ranged_adjacent_position(start_loc, target_loc, min(ideal_distance, monster_speed))
+                        move_to_pos = mapl.loc_to_coords(move_to_loc)
+                        move_distance = distance_function(start_loc, move_to_loc)
+                        new_location, arrow, new_pos = move_towards(start_pos, move_to_pos, move_distance, unoccupied)
                         mapl.update_position(monster, placed, new_pos, out)
                         if arrow:
                             overlays.append(arrow)
