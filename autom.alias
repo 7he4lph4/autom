@@ -18,7 +18,7 @@ using(
     autolib = "ec14bc6e-81e4-4df7-86e9-5d64ed2fa9b7",
     core = "49f5f503-1c00-4f24-ba43-92e65c2c2fb6",
     presets = "c14e4526-4acb-4964-8ba9-f6861617ffdf",
-    mapl = "51af2e97-64e3-444a-994c-61c45c3f0994",
+    mapl = "4b5633ff-7082-4411-95b3-50970c30e832",
     mobl = "65c27eae-11c3-4b5c-90e5-472bc49f0037",
     targl = "f8369cc0-8ab0-42a5-8dfd-4ab7f34c0e61",
     helpl = "aacef7e2-fb6a-4786-9d26-193ed45e4916"
@@ -106,77 +106,18 @@ for co in c.combatants:
         team = 1 if not autolib.isMonster(co) else max(max(teams, default=2),2)
         teams[team] = teams.get(team, []) + [co.name]
 out = {}
-
-def place_combatants():
-    size_groups = {"G": [], "H": [], "L": [], "M": []}
-    for upc, data in unplaced.items():
-
-        # Fetch monster data if not already stored
-        if not mobl.get_stored_monster_data(data.combatant.monster_name):
-            mobl.fetch_and_store_monster_data()
-
-        size = data.get("size")
-        if not size:
-            size = "M"
-            if data.combatant.monster_name:
-                size = mobl.get_monster_size(data.combatant.monster_name)
-            data.update({"size": size, "size_mod": mapl.get_size_mod(size)})
-        (size_groups[size[0]] if size[0] in "GHL" else size_groups["M"]).append(upc)
-    
-    player_side = 0
-    players_x = [p["pos"][0] for p in placed.values() if not autolib.isMonster(p.combatant)]
-    if 0 < len(players_x):
-        player_side = round((sum(players_x) / len(players_x)) / (width - 1))
-    for sg, unplaced_c in size_groups.items():
-        if len(unplaced_c) < 1:
-            continue
-        size_mod = mapl.get_size_mod(sg)
-        occupied_grid = {x: [] for x in range(0, width - size_mod)}
-        for data in placed.values():
-            mapl.update_occupied(occupied_grid, size_mod, data, width, height)
-        sides = {
-            0: range(width // 2 - size_mod - 1, -1, -1),
-            1: range(width // 2, width - size_mod)
-        }
-        y_range = list(range(1, height - size_mod + 1))
-        for upc in unplaced_c:
-            is_monster = autolib.isMonster(unplaced[upc].combatant)
-            side = player_side if not is_monster else 1 - player_side
-            side_cols = [x for x in sides[side] if x in occupied_grid]
-            if not side_cols:
-                side_cols = [x for x in sides[1 - side] if x in occupied_grid][0:1]
-                if not side_cols:
-                    continue
-            x = randchoice(side_cols)
-            y = randchoice([ry for ry in y_range if ry not in occupied_grid[x]])
-            
-            location = mapl.coords_to_loc([x, y])
-            color = 'r' if is_monster else 'b'
-            combatant = unplaced[upc].combatant
-            placed[upc] = {
-                "location": location, "size": sg, "color": color, "combatant": combatant, "pos": (x, y), "size_mod": size_mod,
-            }
-            combatant.set_note(f"Location: {location} | Color: {color} | Size: {sg} ({size_dict[sg]})")
-            
-            mapl.update_occupied(occupied_grid, size_mod, placed[upc], width, height)
-            out[upc] = placed[upc]
-            map_state["combatants"] = map_state.get("combatants", {})
-            map_state["combatants"].update(out)
-            unplaced.pop(upc)
-        # if unplaced:
-        #     err(f"Could not place {combatant.name} on the map without overlapping.")
         
 if (inp1.lower() in ['m', 'map']) or not map_info:
     map_name = inp2 if inp1.lower() in ['m', 'map'] else ""
     message = presets.load_specific_map(map_state, map_attach, map_name)
     width, height = mapl.parse_mapsize(map_state.get("size"))
     if unplaced:
-        place_combatants()
+        mapl.place_combatants(placed, unplaced, width, height, out, map_state)
     map_url = mapl.generate_map_image()
     return f'embed {message} -image "{map_url}"'
 
 if unplaced:
-    place_combatants()
+    mapl.place_combatants(placed, unplaced, width, height, out, map_state)
     map_url = mapl.generate_map_image()
     command_list.append(f'{pref}embed -title "Map Setup Complete!" -desc "All combatants have been placed on the map." -image "{map_url}"')
     return command + nl.join(command_list)  
