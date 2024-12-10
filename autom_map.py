@@ -2,6 +2,14 @@
 
 alph = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 c = combat()
+size_dict = {
+    "T": "Tiny",
+    "S": "Small",
+    "M": "Medium",
+    "L": "Large",
+    "H": "Huge",
+    "G": "Gargantuan",
+}
 
 
 def mapPresent():
@@ -84,11 +92,12 @@ def attach_map_to_combatant(map_state):
     return True, f"Map information attached to {map_combatant.name}"
 
 
-def generate_map_image(overlays=None):
+def generate_map_image(overlays=None, map_info=None):
     map_url = f"{get('otfbm_base_url', 'http://otfbm.io/')}"
 
     # Get the latest map info from the map combatant
-    map_info, map_combatant = get_map_info()
+    if not map_info:
+        map_info = get_map_info()[0]
 
     # Use the stored map options or defaults
     cell_size = map_info.get("options", get("mapOptions", ""))
@@ -231,6 +240,78 @@ def update_occupied(occupied_grid, space_mod, data, width, height):
             occupied_grid[x] = list(set(occupied_grid[x] + occupied_y))
             if height - space_mod <= len(occupied_grid[x]):
                 occupied_grid.pop(x)
+
+
+def place_combatants(placed, unplaced, width, height, out, map_state):
+    using(
+        autolib="ec14bc6e-81e4-4df7-86e9-5d64ed2fa9b7",
+        mobl="65c27eae-11c3-4b5c-90e5-472bc49f0037",
+    )
+    size_groups = {"G": [], "H": [], "L": [], "M": []}
+    for upc, data in unplaced.items():
+
+        if not mobl.get_stored_monster_data(data.combatant.monster_name):
+            mobl.fetch_and_store_monster_data()
+
+        size = data.get("size")
+        if not size:
+            size = "M"
+            if data.combatant.monster_name:
+                size = mobl.get_monster_size(data.combatant.monster_name)
+            data.update({"size": size, "size_mod": get_size_mod(size)})
+        (size_groups[size[0]] if size[0] in "GHL" else size_groups["M"]).append(upc)
+
+    player_side = 0
+    players_x = [
+        p["pos"][0] for p in placed.values() if not autolib.isMonster(p.combatant)
+    ]
+    if 0 < len(players_x):
+        player_side = round((sum(players_x) / len(players_x)) / (width - 1))
+    for sg, unplaced_c in size_groups.items():
+        if len(unplaced_c) < 1:
+            continue
+        size_mod = get_size_mod(sg)
+        occupied_grid = {x: [] for x in range(0, width - size_mod)}
+        for data in placed.values():
+            update_occupied(occupied_grid, size_mod, data, width, height)
+        sides = {
+            0: range(width // 2 - size_mod - 1, -1, -1),
+            1: range(width // 2, width - size_mod),
+        }
+        y_range = list(range(1, height - size_mod + 1))
+        for upc in unplaced_c:
+            is_monster = autolib.isMonster(unplaced[upc].combatant)
+            side = player_side if not is_monster else 1 - player_side
+            side_cols = [x for x in sides[side] if x in occupied_grid]
+            if not side_cols:
+                side_cols = [x for x in sides[1 - side] if x in occupied_grid][0:1]
+                if not side_cols:
+                    continue
+            x = randchoice(side_cols)
+            y = randchoice([ry for ry in y_range if ry not in occupied_grid[x]])
+
+            location = coords_to_loc([x, y])
+            color = "r" if is_monster else "b"
+            combatant = unplaced[upc].combatant
+            placed[upc] = {
+                "location": location,
+                "size": sg,
+                "color": color,
+                "combatant": combatant,
+                "pos": (x, y),
+                "size_mod": size_mod,
+            }
+            combatant.set_note(
+                f"Location: {location} | Color: {color} | Size: {sg} ({size_dict[sg]})"
+            )
+
+            update_occupied(occupied_grid, size_mod, placed[upc], width, height)
+            out[upc] = placed[upc]
+            map_state["combatants"] = map_state.get("combatants", {})
+            map_state["combatants"].update(out)
+            unplaced.pop(upc)
+        # if unplaced:
+        #     err(f"Could not place {combatant.name} on the map without overlapping.")
 
 
 # Coordinate Functions
