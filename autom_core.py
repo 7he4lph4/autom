@@ -51,3 +51,16 @@ def reversed(sequence):
     for i in range(len(sequence) - 1, -1, -1):
         result.append(sequence[i])
     return result
+
+
+def make_embed(title="", desc="", fields=[], color=""):
+    embed = "embed"
+    if title:
+        embed += f' -title "{title}"'
+    if desc:
+        embed += f' -desc "{desc}"'
+    for f in fields:
+        embed += f' -f "{f}"'
+    if color:
+        embed += f" -color {color}"
+    return embed

@@ -18,7 +18,7 @@ using(
     autolib = "ec14bc6e-81e4-4df7-86e9-5d64ed2fa9b7",
     core = "49f5f503-1c00-4f24-ba43-92e65c2c2fb6",
     presets = "c14e4526-4acb-4964-8ba9-f6861617ffdf",
-    mapl = "4b5633ff-7082-4411-95b3-50970c30e832",
+    mapl = "51af2e97-64e3-444a-994c-61c45c3f0994",
     mobl = "65c27eae-11c3-4b5c-90e5-472bc49f0037",
     targl = "f8369cc0-8ab0-42a5-8dfd-4ab7f34c0e61",
     helpl = "aacef7e2-fb6a-4786-9d26-193ed45e4916"
@@ -38,15 +38,14 @@ if not c or inp == 'help' or inp == '?':
     title = f'{cmd} works best when used with a combat initiative full of player characters and monsters!'
     desc = 'Please start initiative and add your players and  monsters.'
     return f'embed -title "{title}" -desc "{desc_text}"'
-    
-
-# INITIALIZING COMBAT AND MAP
-
 
 if inp1.lower() == 'lair':
     command_list.append(f'{pref}i add 0 Lair -p 20')
     command_list.append(f'''{pref}embed -title "A Lair Object has been added!" -desc "A Lair object was added at Initiative 20 to run monsters' Lair Actions." -color <color>''')
     return command + nl.join(command_list)
+
+
+# INITIALIZING COMBAT AND MAP
 
 combatants = c.combatants
 combatant_list, party_list, monster_list = targl.get_target_lists()
@@ -81,7 +80,8 @@ if not map_attach:
     map_attach.add_effect("map", attacks=[{"attack": {"name":"map", "automation": [{"type":"text", "text":""}], "_v":2,}}])
     
     desc = helpl.no_map
-    return f'embed -title "Map Settings attached to {map_attach.name}!" -desc "{desc}" -color <color>'
+    command_list.append(f'{pref}embed -title "Map Settings attached to {map_attach.name}!" -desc "{desc}" -color <color>')
+    # return f'embed -title "Map Settings attached to {map_attach.name}!" -desc "{desc}" -color <color>'
 map_state = {
     "current_map": None, 
     "size": map_info.get("size", [20, 20]),
@@ -106,52 +106,65 @@ for co in c.combatants:
         team = 1 if not autolib.isMonster(co) else max(max(teams, default=2),2)
         teams[team] = teams.get(team, []) + [co.name]
 out = {}
-        
+
+new_combat = False
 if (inp1.lower() in ['m', 'map']) or not map_info:
     map_name = inp2 if inp1.lower() in ['m', 'map'] else ""
     message = presets.load_specific_map(map_state, map_attach, map_name)
     width, height = mapl.parse_mapsize(map_state.get("size"))
     if unplaced:
         mapl.place_combatants(placed, unplaced, width, height, out, map_state)
-    map_url = mapl.generate_map_image()
-    return f'embed {message} -image "{map_url}"'
+    map_info = {"size": f"{width}x{height}", "background": map_state.get("bg_image", ""), "options": map_state.get("mapoptions", "")}
+    map_url = mapl.generate_map_image(map_info=map_info)
+    command_list.append(f'{pref}embed {message} -image "{map_url}"')
+    new_combat = True
 
 if unplaced:
     mapl.place_combatants(placed, unplaced, width, height, out, map_state)
     map_url = mapl.generate_map_image()
     command_list.append(f'{pref}embed -title "Map Setup Complete!" -desc "All combatants have been placed on the map." -image "{map_url}"')
-    return command + nl.join(command_list)  
+    new_combat = True
 
 if not party_names:
     err(helpl.no_players)
 
+current_init = ""
 if c.current is None:
-    title = f'Booting up ancient artificial intelligences! :robot:'
-    if monster_names:
-        desc_text = f'\n:robot: _Auto-attack sequence initiated!_\n\nAutomating the following monsters:\n**{", ".join(monster_names)}**\n\n**Use `{cmd}` again now to automate all monsters in combat!**'
-        command_list.append(f'{pref}i n')
+    title = f'Booting up ancient artificial intelligence! :robot:'
+    c_none_desc = ""
+    if not monster_names:
+        c_none_desc = f'_No monsters found in initiative!_\n\nThat\'s fine, feel free to add them any time and run `{cmd}` every time it\'s the monster\'s turn!'
+        command_list.append(f'{pref}embed -title "{title}" -desc "{c_none_desc}"')
+        return command + nl.join(command_list)   
     else:
-        desc_text = f'_No monsters found in initiative!_\n\nThat\'s fine, feel free to add them any time and run `{cmd}` every time it\'s the monster\'s turn!'
-    command_list.append(f"""{pref}embed -title "{title}" -desc "{desc_text}" """)
-    return command + nl.join(command_list)   
+        command_list.append(f'{pref}init next')
+        current_init = combatants[0].name
+else:
+    current_init = c.current.name
 
-current_init = c.current.name
-
-# It's a player's turn
-if current_init.casefold() in ['map', 'dm', 'lair'] and c.turn_num == 20:
+if current_init.casefold() in ['map', 'dm', 'lair']:
     title = f'Waiting on Lair Action :dragon:'
     desc_text = f'Use `{pref}i n` if there are no actions to take this round!'
-    return f"""embed -title "{title}" -desc "{desc_text}" """
-elif autolib.hasMonsterGroup(c) or not c.current.monster_name:
+    command_list.append(f'{pref}embed -title "{title}" -desc "{desc_text}"')
+    return command + nl.join(command_list)
+
+# It's a player's turn
+if (current_init not in monster_names) or autolib.hasMonsterGroup(c):
     title = f'It\'s a player turn! :mage:'
     desc_text = f"Waiting on **{current_init}** to play their turn!"
     if not get_uvar('mapStates'):
         desc_text += helpl.move_help
-    return f"""embed -title "{title}" -desc "{desc_text}" """
-   
-        
-# MAP INITIALIZATION COMPLETE
+    command_list.append(f'{pref}embed -title "{title}" -desc "{desc_text}"')
+    return command + nl.join(command_list)
 
+if new_combat:
+    title = f'Booting up ancient artificial intelligence! :robot:'
+    desc_text = f'\n:robot: _Auto-attack sequence initiated!_\n\nAutomating the following monsters:\n**{", ".join(monster_names)}**\n\n**Use `{cmd}` again now to automate all monsters in combat!**'
+    command_list.append(f'{pref}embed -title "{title}" -desc "{desc_text}"')
+    return command + nl.join(command_list)
+  
+    
+# MAP INITIALIZATION COMPLETE
 
 def find_best_aoe_position(monster, aoe_attack, target_names):
     best_position = None
@@ -246,8 +259,7 @@ def distance(pos1, pos2):
     return (diagonals * 5) + (straight * 5)
 
 def draw_aoe_overlay(monster, aoe_attack, position, targets):
-
-    shapeDict = [{"type": "circle",       "name":"c",  "num": [3], "args": ("size", "color", "loc")},
+    shapeDict = [{"type": "circle",     "name":"c",  "num": [3], "args": ("size", "color", "loc")},
                {"type": "circletop",    "name":"ct", "num": [3], "args": ("size", "color", "loc")},
                {"type": "circlecorner", "name":"co", "num": [3], "args": ("size", "color", "loc")},
                {"type": "cone",         "name":"t",  "num": [4], "args": ("size", "color", "loc", "eloc")},

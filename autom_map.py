@@ -92,11 +92,12 @@ def attach_map_to_combatant(map_state):
     return True, f"Map information attached to {map_combatant.name}"
 
 
-def generate_map_image(overlays=None):
+def generate_map_image(overlays=None, map_info=None):
     map_url = f"{get('otfbm_base_url', 'http://otfbm.io/')}"
 
     # Get the latest map info from the map combatant
-    map_info, map_combatant = get_map_info()
+    if not map_info:
+        map_info = get_map_info()[0]
 
     # Use the stored map options or defaults
     cell_size = map_info.get("options", get("mapOptions", ""))
