@@ -16,10 +16,16 @@ inp3 = "&3&"
 
 using(
     autolib = "ec14bc6e-81e4-4df7-86e9-5d64ed2fa9b7",
+    #autolib test
+    # autolib = "b02daf2d-7cfc-4b0c-8fd2-f7be253e8f13",
+
     core = "49f5f503-1c00-4f24-ba43-92e65c2c2fb6",
     presets = "c14e4526-4acb-4964-8ba9-f6861617ffdf",
-    mapl = "51af2e97-64e3-444a-994c-61c45c3f0994",
+    mapl = "4b5633ff-7082-4411-95b3-50970c30e832",
     mobl = "65c27eae-11c3-4b5c-90e5-472bc49f0037",
+    #mobl test
+    # mobl = "56f70775-86f6-46c5-ae74-acb839bbee74",
+
     targl = "f8369cc0-8ab0-42a5-8dfd-4ab7f34c0e61",
     helpl = "aacef7e2-fb6a-4786-9d26-193ed45e4916"
 )
@@ -605,7 +611,46 @@ def process_monster_turn(indexed_combatant, out, overlays, desc, command_list, s
                 go_distance = min(melee)
                 go_coords = randchoice(melee[go_distance])
                 
-                # Monster needs to dash   
+                # Determine if the monster has ranged attacks
+                ranged_attacks = [
+                    atk for atk in monster.attacks
+                    if 'Ranged Weapon Attack' in atk.raw.get('automation', [{}])[1].get('text', '')
+                ]
+
+                if ranged_attacks:
+                    # Choose a ranged attack and its properties
+                    chosen_ranged_attack = randchoice(ranged_attacks)
+                    attack_range = int(chosen_ranged_attack.raw['automation'][1]['text'].split('range')[1].split('/')[0].strip())  # Extract range
+
+                    # Check if the target is within range or move towards the edge of range
+                    if distance > attack_range:
+                        move_distance = min(monster_speed, distance - attack_range)
+                        new_location, arrow, new_pos = move_towards(start_pos, target_pos, move_distance, unoccupied)
+                        mapl.update_position(monster, placed, new_pos, out)
+
+                        if new_pos != start_pos:
+                            new_location = mapl.coords_to_loc(new_pos)  # Convert coordinates to location string
+                            overlays.append(create_arrow_overlay(move_distance, location, new_location))
+                            desc.append(f"{indexed_combatant} uses {int(move_distance)} ft. out of their {monster_speed} ft. to {'move' if monster_move_verb == 'walk' else '*fly*'} towards {chosen_target}, staying at the edge of their *{chosen_ranged_attack.name}* attack range of {attack_range} ft.")
+                        else:
+                            desc.append(f"{indexed_combatant} remains stationary ({distance} ft. away from {chosen_target}), already positioned within range for its ranged *{chosen_ranged_attack.name}* attack, which has a range of {attack_range} ft.")
+                    else:
+                        desc.append(f"{indexed_combatant} remains stationary ({distance} ft. away from {chosen_target}), already positioned within range for its ranged *{chosen_ranged_attack.name}* attack, which has a range of {attack_range} ft.")
+
+                    # Update the map regardless of movement
+                    map_state["combatants"] = out
+                    map_url = mapl.generate_map_image(overlays)
+                    command_list.append(f'{pref}embed -title "Monster Movement: {monster.name}" -desc "{desc[-1]}" -image "{map_url}"')
+
+                    # Perform the ranged attack
+                    command_list.append(f'{pref}i a "{chosen_ranged_attack.raw["name"]}" -t {chosen_target} -phrase ":robot: _Triggered by auto monster AI_"')
+
+                    # End the monster's turn
+                    command_list.append(f'{pref}i n')
+                    return
+
+                # If no ranged attacks, fallback to dashing for melee
+                # Monster needs to dash
                 if monster_speed < go_distance: # distance - max_attack_reach:
                     new_location, arrow, new_pos = move_towards(start_pos, go_coords, monster_speed * 2, unoccupied, occupied)
                     mapl.update_position(monster, placed, new_pos, out)
@@ -650,7 +695,7 @@ def process_monster_turn(indexed_combatant, out, overlays, desc, command_list, s
                 command_list.append(f'{pref}i a "{atkr}" {snippets} -rr {num} autoc -t {chosen_target} -phrase ":robot: _Triggered by auto monster AI_ :crossed_swords: Multiattack :crossed_swords:{phrase}"')
             command_list.append(f'{pref}i n')
         else:
-            chosen_atk_string = autolib.getAttack(indexed_combatant, c.combatants)
+            chosen_atk_string = autolib.getMeleeAttack(indexed_combatant, c.combatants)
             command_list.append(f'{pref}i a "{chosen_atk_string}" {snippets} -t {chosen_target} autoc -phrase ":robot: _Triggered by auto monster AI_{phrase}"')
             command_list.append(f'{pref}i n')    
     elif curr_hp <= 0:

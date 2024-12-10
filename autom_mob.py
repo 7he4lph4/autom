@@ -91,20 +91,100 @@ def remove_stored_monster_data(monster_name):
 
 def get_monster_speed(monster_name):
     speed_data = get_stored_monster_data(monster_name, "speed")
-    if speed_data:
-        walk_speed = fly_speed = 0
-        # Split the string by commas first to handle each speed type separately
-        speed_parts = speed_data.lower().split(',')
-        for part in speed_parts:
-            speed_type, speed_value = part.split(':')
-            speed_value = int(speed_value.strip())
-            if 'walk' in speed_type:
-                walk_speed = speed_value
-            elif 'fly' in speed_type:
-                fly_speed = speed_value
-        return max(walk_speed, fly_speed), "fly" if fly_speed > walk_speed else "walk"
+    if not speed_data:
+        return 30, "walk"  # Default if no data
     
-    return 30, "walk"  # Default speed if not found
+    # Normalize the string
+    data = speed_data.lower()
+    
+    # Remove units and extraneous spacing
+    # We'll remove "ft." to simplify parsing
+    data = data.replace("ft.", "").replace("ft", "")
+    
+    # Known speed types to look for
+    speed_types = ["walk", "fly", "climb", "burrow", "swim"]
+    # We'll store extracted speeds in a dictionary
+    speeds = {st: 0 for st in speed_types}
+    
+    # We will split by commas first, as commas often separate speed entries
+    parts = data.split(',')
+    
+    # Helper function to extract the first integer from a string
+    def extract_first_int(s):
+        # We'll scan character by character for digits
+        digits = ""
+        started = False
+        for ch in s:
+            if ch.isdigit():
+                digits += ch
+                started = True
+            elif started:
+                # Once we started collecting digits, if we hit a non-digit, we stop
+                break
+        if digits:
+            return int(digits)
+        return None
+    
+    # Process each part to find speeds
+    # A part might look like "walk:40", "fly:{'number': 10, 'condition': '(hover)'}", or "burrow 30 "
+    # We'll try to find known speed words in each part and extract a number
+    for part in parts:
+        p = part.strip()
+        # Try to find which speed type this part corresponds to
+        # We'll pick the first speed type keyword that appears in p
+        found_type = None
+        for st in speed_types:
+            if st in p:
+                found_type = st
+                break
+        
+        if found_type is not None:
+            # Try to extract the first integer after this type appears
+            # We'll consider the substring after the speed type if possible, but let's just extract from the whole part
+            val = extract_first_int(p)
+            if val is not None:
+                speeds[found_type] = val
+    
+    # If no speeds found, we might have a format without commas (like "50 ft., burrow 30 ft.")
+    # We'll do a fallback: If all are zero, let's try another approach:
+    if all(v == 0 for v in speeds.values()):
+        # Let's split by spaces and see if we can find speed keywords inline
+        words = data.replace(",", " ").split()
+        # words might look like ["50", "burrow", "30"]
+        # We'll scan for known speed types in words and pick the next integer after them
+        for i, w in enumerate(words):
+            # If this word matches a speed type or ends with it (e.g. "burrow" might appear directly)
+            for st in speed_types:
+                if w.startswith(st):
+                    # Find next number after index i
+                    # It might be in the same word or next words
+                    val = extract_first_int(w)
+                    if val is None:
+                        # Check subsequent words for a number
+                        for j in range(i+1, len(words)):
+                            val = extract_first_int(words[j])
+                            if val is not None:
+                                break
+                    if val is not None:
+                        speeds[st] = val
+    
+    # Determine the final returned speeds
+    walk_speed = speeds["walk"]
+    fly_speed = speeds["fly"]
+    
+    # If both are 0, try picking any largest speed just in case
+    if walk_speed == 0 and fly_speed == 0:
+        # Check if there's any non-zero speed at all
+        max_speed = max(speeds.values())
+        if max_speed == 0:
+            # No data found at all, return default
+            return 30, "walk"
+        else:
+            # If we found some speed but no walk or fly, let's just treat it as walk
+            return max_speed, "walk"
+    
+    # Return the max of walk and fly as per original function
+    return (max(walk_speed, fly_speed), "fly" if fly_speed > walk_speed else "walk")
 
 
 def get_monster_size(monster_name):
