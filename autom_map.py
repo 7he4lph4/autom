@@ -249,7 +249,6 @@ def place_combatants(placed, unplaced, width, height, out, map_state):
     )
     size_groups = {"G": [], "H": [], "L": [], "M": []}
     for upc, data in unplaced.items():
-
         if not mobl.get_stored_monster_data(data.combatant.monster_name):
             mobl.fetch_and_store_monster_data()
 
