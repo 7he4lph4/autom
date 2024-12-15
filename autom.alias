@@ -155,7 +155,7 @@ if current_init.casefold() in ['map', 'dm', 'lair']:
     return command + nl.join(command_list)
 
 # It's a player's turn
-if (current_init not in monster_names) or autolib.hasMonsterGroup(c):
+if c.current and not c.current.monster_name: # and not autolib.hasMonsterGroup(c):
     title = f'It\'s a player turn! :mage:'
     desc_text = f"Waiting on **{current_init}** to play their turn!"
     if not get_uvar('mapStates'):
@@ -620,7 +620,7 @@ def process_monster_turn(indexed_combatant, out, overlays, desc, command_list, s
                 if ranged_attacks:
                     # Choose a ranged attack and its properties
                     chosen_ranged_attack = randchoice(ranged_attacks)
-                    attack_range = int(chosen_ranged_attack.raw['automation'][1]['text'].split('range')[1].split('/')[0].strip())  # Extract range
+                    attack_range = int(chosen_ranged_attack.raw['automation'][1]['text'].split('range')[1].split('/')[0].split(" ft.")[0].strip())  # Extract range
 
                     # Check if the target is within range or move towards the edge of range
                     if distance > attack_range:
