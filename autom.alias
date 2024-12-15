@@ -155,7 +155,7 @@ if current_init.casefold() in ['map', 'dm', 'lair']:
     return command + nl.join(command_list)
 
 # It's a player's turn
-if (current_init not in monster_names) or autolib.hasMonsterGroup(c):
+if not c.current.monster_name: # and not autolib.hasMonsterGroup(c):
     title = f'It\'s a player turn! :mage:'
     desc_text = f"Waiting on **{current_init}** to play their turn!"
     if not get_uvar('mapStates'):
