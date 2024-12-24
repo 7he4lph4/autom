@@ -147,6 +147,8 @@ if c.current is None:
         current_init = combatants[0].name
 else:
     current_init = c.current.name
+    
+current_combatant = c.get_combatant(current_init)
 
 if current_init.casefold() in ['map', 'dm', 'lair']:
     title = f'Waiting on Lair Action :dragon:'
@@ -160,6 +162,12 @@ if c.current and not c.current.monster_name: # and not autolib.hasMonsterGroup(c
     desc_text = f"Waiting on **{current_init}** to play their turn!"
     if not get_uvar('mapStates'):
         desc_text += helpl.move_help
+    command_list.append(f'{pref}embed -title "{title}" -desc "{desc_text}"')
+    return command + nl.join(command_list)
+
+if current_combatant.monster_name and current_combatant.get_effect("Stop Automation (auto)"):
+    title = f'Stopping automation for {current_combatant.name}'
+    desc_text = f"Automation has been stopped for **{current_combatant.name}**'s turn!"
     command_list.append(f'{pref}embed -title "{title}" -desc "{desc_text}"')
     return command + nl.join(command_list)
 
@@ -794,7 +802,7 @@ for indexed_combatant in indexed_cname_list:
         return command
     
     monster = c.get_combatant(indexed_combatant)    
-    if monster.monster_name:
+    if monster.monster_name and not monster.get_effect('Stop Automation (auto)'):
         if autolib.isMonster(monster) != current_enemy:
             title = f'''Automation Complete! It\'s the other side's turn now! :mage:'''
             desc_text = f'Waiting on **{indexed_combatant}** to play their turn!'
@@ -811,6 +819,9 @@ for indexed_combatant in indexed_cname_list:
         if indexed_combatant.casefold() in ['map', 'dm', 'lair'] and c.get_combatant(indexed_combatant).init == 20:
             title = f'Automation Complete! Waiting on Lair Action :dragon:'
             desc_text = f'Use `{pref}i n` if there are no actions to take this round!'
+        elif monster.get_effect('Stop Automation (auto)'):
+            title = f'Automation Complete! {indexed_combatant} is pausing automation!'
+            desc_text = f'Use `{pref}i n` to continue automation!'
         elif inp1.lower() in 'react':
             command_list.pop()
             title = f'Automation Complete! Pausing to allow player reaction! :mage:'
