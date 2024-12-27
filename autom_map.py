@@ -92,7 +92,7 @@ def attach_map_to_combatant(map_state):
     return True, f"Map information attached to {map_combatant.name}"
 
 
-def generate_map_image(overlays=None, map_info=None):
+def generate_map_image(overlays=None, map_info=None, map_state=None):
     map_url = f"{get('otfbm_base_url', 'http://otfbm.io/')}"
 
     # Get the latest map info from the map combatant
@@ -110,29 +110,39 @@ def generate_map_image(overlays=None, map_info=None):
 
     # Add combatants
     combatant_str = ""
-    for combatant in c.combatants:
-        if combatant.name.lower() not in ["map", "dm", "lair"]:
-            note = parse_note(combatant.note)
-            location = note.get("location")
-            if location:
-                size = note.get("size", "M")
-                size_letter = size[0].upper()  # Ensure size letter is uppercase
-                # Get grid size for token from size map
-                size_map = {"T": 1, "S": 1, "M": 1, "L": 2, "H": 3, "G": 4}
-                grid_size = size_map.get(size_letter, 1)
+    if not map_state:
+        for combatant in c.combatants:
+            if combatant.name.lower() not in ["map", "dm", "lair"]:
+                note = parse_note(combatant.note)
+                location = note.get("location")
+                if location:
+                    size = note.get("size", "M")
+                    size_letter = size[0].upper()  # Ensure size letter is uppercase
+                    # Get grid size for token from size map
+                    size_map = {"T": 1, "S": 1, "M": 1, "L": 2, "H": 3, "G": 4}
+                    grid_size = size_map.get(size_letter, 1)
 
-                color = note.get("color", "b" if "/" in combatant.hp_str() else "r")
+                    color = note.get("color", "b" if "/" in combatant.hp_str() else "r")
+                    if len(color) in (3, 6) and color.isalnum():
+                        color = f"~{color.upper()}"
+                    else:
+                        color = color[0]
+
+                    # Build the combatant string for the map URL
+                    combatant_str += f"/{location}{size_letter}{color}-{combatant.name}"
+    else:
+        for co, values in map_state.get("combatants", {}).items():
+            location = values.get("location")
+            if location:
+                size = values["size"][0].upper()
+                color = values["color"]
                 if len(color) in (3, 6) and color.isalnum():
                     color = f"~{color.upper()}"
                 else:
-                    color = color[0]
-                name = combatant.name.replace(" ", "_")
-
-                # Build the combatant string for the map URL
-                combatant_str += f"/{location}{size_letter}{color}"
-                combatant_str += f"-{name}"
+                    color = color[:2].strip()
+                combatant_str += f"/{location}{size}{color}-{co}"
     if combatant_str:
-        map_url += combatant_str
+        map_url += combatant_str.replace(" ", "_")
 
     # Add overlays
     if overlays:
@@ -175,19 +185,6 @@ def generate_map_image(overlays=None, map_info=None):
 # Placement Functions
 
 
-def get_placed_combatants():
-    placed, unplaced = {}, {}
-    for co in c.combatants:
-        if typeof(co) == "SimpleGroup":
-            for gco in co.combatants:
-                data, p = process_map_combatant(gco, placed)
-                (placed if p else unplaced)[gco.name] = data
-        elif co.name.lower() not in ["map", "dm", "lair"]:
-            data, p = process_map_combatant(co, placed)
-            (placed if p else unplaced)[co.name] = data
-    return placed, unplaced
-
-
 def update_adjacent(data, placed):
     if 0 < len(data.get("adjacent", [])):
         for name in data["adjacent"]:
@@ -206,8 +203,15 @@ def update_adjacent(data, placed):
             pc["adjacent"].append(data["combatant"].name)
 
 
+using(
+    autolib="ec14bc6e-81e4-4df7-86e9-5d64ed2fa9b7",
+    mobl="65c27eae-11c3-4b5c-90e5-472bc49f0037",
+)
+
+
 def process_map_combatant(combatant, placed):
     data = parse_note(combatant.note)
+    data["color"] = data.get("color", "r" if autolib.isMonster(combatant) else "b")
     data["combatant"] = combatant
     if "location" in data:
         data["pos"] = loc_to_coords(data["location"])
@@ -215,6 +219,19 @@ def process_map_combatant(combatant, placed):
         update_adjacent(data, placed)
         return data, True
     return data, False
+
+
+def get_placed_combatants():
+    placed, unplaced = {}, {}
+    for co in c.combatants:
+        if typeof(co) == "SimpleGroup":
+            for gco in co.combatants:
+                data, p = process_map_combatant(gco, placed)
+                (placed if p else unplaced)[gco.name] = data
+        elif co.name.lower() not in ["map", "dm", "lair"]:
+            data, p = process_map_combatant(co, placed)
+            (placed if p else unplaced)[co.name] = data
+    return placed, unplaced
 
 
 def update_position(combatant, placed, position, out):
@@ -243,10 +260,6 @@ def update_occupied(occupied_grid, space_mod, data, width, height):
 
 
 def place_combatants(placed, unplaced, width, height, out, map_state):
-    using(
-        autolib="ec14bc6e-81e4-4df7-86e9-5d64ed2fa9b7",
-        mobl="65c27eae-11c3-4b5c-90e5-472bc49f0037",
-    )
     size_groups = {"G": [], "H": [], "L": [], "M": []}
     for upc, data in unplaced.items():
         if not mobl.get_stored_monster_data(data.combatant.monster_name):
@@ -254,9 +267,7 @@ def place_combatants(placed, unplaced, width, height, out, map_state):
 
         size = data.get("size")
         if not size:
-            size = "M"
-            if data.combatant.monster_name:
-                size = mobl.get_monster_size(data.combatant.monster_name)
+            size = mobl.get_monster_size(data.combatant.monster_name)
             data.update({"size": size, "size_mod": get_size_mod(size)})
         (size_groups[size[0]] if size[0] in "GHL" else size_groups["M"]).append(upc)
 
@@ -266,6 +277,8 @@ def place_combatants(placed, unplaced, width, height, out, map_state):
     ]
     if 0 < len(players_x):
         player_side = round((sum(players_x) / len(players_x)) / (width - 1))
+
+    map_state["combatants"] = map_state.get("combatants", {})
     for sg, unplaced_c in size_groups.items():
         if len(unplaced_c) < 1:
             continue
@@ -288,9 +301,8 @@ def place_combatants(placed, unplaced, width, height, out, map_state):
                     continue
             x = randchoice(side_cols)
             y = randchoice([ry for ry in y_range if ry not in occupied_grid[x]])
-
             location = coords_to_loc([x, y])
-            color = "r" if is_monster else "b"
+            color = unplaced[upc]["color"]
             combatant = unplaced[upc].combatant
             placed[upc] = {
                 "location": location,
@@ -306,8 +318,7 @@ def place_combatants(placed, unplaced, width, height, out, map_state):
 
             update_occupied(occupied_grid, size_mod, placed[upc], width, height)
             out[upc] = placed[upc]
-            map_state["combatants"] = map_state.get("combatants", {})
-            map_state["combatants"].update(out)
+            map_state["combatants"][upc] = placed[upc]
             unplaced.pop(upc)
         # if unplaced:
         #     err(f"Could not place {combatant.name} on the map without overlapping.")

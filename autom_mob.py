@@ -2,7 +2,7 @@
 
 c = combat()
 
-
+# fmt: off
 # Pre-prepared buckets for monsters based on the first letter of their name
 monster_buckets = {
     'm': ["38132517-9fdc-4d90-8199-1b1c14efa134", "dff68592-2750-478a-9da0-d90f71d7ff60", "f34b0e24-c7c5-4958-b0a1-069c38ed19cf"],
@@ -33,6 +33,8 @@ monster_buckets = {
     'n': ["f34b0e24-c7c5-4958-b0a1-069c38ed19cf"]
 }
 
+override_db = load_json(get_gvar("07bc51ca-97bc-4927-bc92-3b3aea924634"))
+
 def get_monster_data(monster_name, data_needed=None):
     if not monster_name:
         return None
@@ -52,7 +54,6 @@ def get_monster_data(monster_name, data_needed=None):
             if data_needed:
                 return monster_data.get(data_needed, None)
             return monster_data
-    
     return None
 
 def fetch_and_store_monster_data():
@@ -188,6 +189,9 @@ def get_monster_speed(monster_name):
 
 
 def get_monster_size(monster_name):
+    if monster_name in override_db:
+        parts = override_db[monster_name].split(";")
+        return parts[0].split(":")[0]
     monster_data = get_stored_monster_data(monster_name)
     if monster_data:
         meta = monster_data.get("size", "")
