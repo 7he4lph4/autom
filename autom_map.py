@@ -10,6 +10,10 @@ size_dict = {
     "H": "Huge",
     "G": "Gargantuan",
 }
+using(
+    autolib="ec14bc6e-81e4-4df7-86e9-5d64ed2fa9b7",
+    mobl="65c27eae-11c3-4b5c-90e5-472bc49f0037",
+)
 
 
 def mapPresent():
@@ -56,11 +60,17 @@ def parse_note(note):
     }
 
 
-def update_combatant_note(combatant, **kwargs):
+def update_combatant_note(combatant, map_state, **kwargs):
     note = parse_note(combatant.note)
     note.update(kwargs)
     new_note = " | ".join(f"{k.title()}: {v.strip()}" for k, v in note.items())
     combatant.set_note(new_note)
+    map_state["combatants"] = map_state.get("combatants", {})
+    map_state["combatants"][combatant.name] = map_state["combatants"].get(
+        combatant.name, {}
+    )
+    for k, v in kwargs.items():
+        map_state["combatants"][combatant.name][k] = v
 
 
 def attach_map_to_combatant(map_state):
@@ -134,7 +144,7 @@ def generate_map_image(overlays=None, map_info=None, map_state=None):
         for co, values in map_state.get("combatants", {}).items():
             location = values.get("location")
             if location:
-                size = values["size"][0].upper()
+                size = values.get("size", "M")[0].upper()
                 color = values["color"]
                 if len(color) in (3, 6) and color.isalnum():
                     color = f"~{color.upper()}"
@@ -203,12 +213,6 @@ def update_adjacent(data, placed):
             pc["adjacent"].append(data["combatant"].name)
 
 
-using(
-    autolib="ec14bc6e-81e4-4df7-86e9-5d64ed2fa9b7",
-    mobl="65c27eae-11c3-4b5c-90e5-472bc49f0037",
-)
-
-
 def process_map_combatant(combatant, placed):
     data = parse_note(combatant.note)
     data["color"] = data.get("color", "r" if autolib.isMonster(combatant) else "b")
@@ -242,9 +246,9 @@ def update_position(combatant, placed, position, out):
     update_adjacent(data, placed)
     placed[co_name] = data
 
-    update_combatant_note(combatant, location=data["location"])
-    out[co_name] = out.get(co_name, {})
-    out[co_name]["location"] = data["location"]
+    update_combatant_note(combatant, out, location=data["location"])
+    # out[co_name] = out.get(co_name, {})
+    # out[co_name]["location"] = data["location"]
 
 
 def update_occupied(occupied_grid, space_mod, data, width, height):

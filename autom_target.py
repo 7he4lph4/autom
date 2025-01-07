@@ -3,6 +3,17 @@
 using(autolib="ec14bc6e-81e4-4df7-86e9-5d64ed2fa9b7")
 c = combat()
 
+party = []
+monsters, dead_monsters = [], []
+
+for co in c.combatants:
+    if not co.hp or co.name.lower() in ["dm", "map", "lair"]:
+        continue
+    if 0 < co.hp:
+        (monsters if autolib.isMonster(co) else party).append(co)
+    elif autolib.isMonster(co):
+        dead_monsters.append(co)
+
 
 def get_target_lists(targs={}):
     master_list = [
