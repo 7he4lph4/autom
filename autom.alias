@@ -475,6 +475,43 @@ def process_monster_turn(indexed_combatant, out, overlays, desc, command_list, s
         command_list.append(f'{pref}i n')  # Skip to next turn
         return
 
+    monster_effect_names = [effect.name.lower() for effect in monster.effects]
+    # Check if the monster is stunned
+    if "stunned" in monster_effect_names:
+        map_url = map_tools.generate_map_image(overlays)
+        title = f"Skipping stunned monster: {monster.name}"
+        description = f"{monster.name} is stunned. Its turn will be skipped."
+        command_list.append(f'{pref}{get_message.get_message(title=title, description=description, image=map_url)}')
+        command_list.append(f'{pref}i n')
+        return
+
+    # Check if the monster is paralysed
+    if "paralysed" in monster_effect_names:
+        map_url = map_tools.generate_map_image(overlays)
+        title = f"Skipping paralysed monster: {monster.name}"
+        description = f"{monster.name} is paralysed. Its turn will be skipped."
+        command_list.append(f'{pref}{get_message.get_message(title=title, description=description, image=map_url)}')
+        command_list.append(f'{pref}i n')
+        return
+
+    # Check if the monster is paralysed
+    if "petrified" in monster_effect_names:
+        map_url = map_tools.generate_map_image(overlays)
+        title = f"Skipping petrified monster: {monster.name}"
+        description = f"{monster.name} is petrified. Its turn will be skipped."
+        command_list.append(f'{pref}{get_message.get_message(title=title, description=description, image=map_url)}')
+        command_list.append(f'{pref}i n')
+        return
+
+    # Check if the monster is unconscious
+    if "unconscious" in monster_effect_names:
+        map_url = map_tools.generate_map_image(overlays)
+        title = f"Skipping unconscious monster: {monster.name}"
+        description = f"{monster.name} is unconscious. Its turn will be skipped."
+        command_list.append(f'{pref}{get_message.get_message(title=title, description=description, image=map_url)}')
+        command_list.append(f'{pref}i n')
+        return
+
     # Get location from note
     map_data = placed[indexed_combatant]
     location = map_data["location"]
