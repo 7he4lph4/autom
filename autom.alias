@@ -16,18 +16,24 @@ inp3 = "&3&"
 
 using(
     autolib = "ec14bc6e-81e4-4df7-86e9-5d64ed2fa9b7",
-    #autolib test
+    # autolib test
     # autolib = "b02daf2d-7cfc-4b0c-8fd2-f7be253e8f13",
 
     core = "49f5f503-1c00-4f24-ba43-92e65c2c2fb6",
     presets = "c14e4526-4acb-4964-8ba9-f6861617ffdf",
-    mapl = "4b5633ff-7082-4411-95b3-50970c30e832",
+    helpl = "aacef7e2-fb6a-4786-9d26-193ed45e4916",
+    
+    # mapl = "4b5633ff-7082-4411-95b3-50970c30e832",
+    # mapl test
+    mapl = "faa1ca51-5c75-401c-be46-8650472e68f2",
+    
     mobl = "65c27eae-11c3-4b5c-90e5-472bc49f0037",
-    #mobl test
+    # mobl test
     # mobl = "56f70775-86f6-46c5-ae74-acb839bbee74",
 
-    targl = "f8369cc0-8ab0-42a5-8dfd-4ab7f34c0e61",
-    helpl = "aacef7e2-fb6a-4786-9d26-193ed45e4916"
+    #targl = "f8369cc0-8ab0-42a5-8dfd-4ab7f34c0e61",
+    # targl test
+    targl = "0e93fa5a-ba10-4981-9efb-11f7e114101a"
 )
 
 command = f"""multiline{nl}"""
@@ -65,7 +71,6 @@ for mon in monster_list:
 # Map-related variables
 alph = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 size_map = {'T': 1, 'S': 1, 'M': 1, 'L': 2, 'H': 3, 'G': 4}
-size_dict = {"T": "Tiny", "S": "Small", "M": "Medium", "L": "Large", "H": "Huge", "G": "Gargantuan"}
 map_base_url = get("otfbm_base_url", "http://otfbm.io/")
 mapsize = get("mapSize", "20x20")
 
@@ -96,6 +101,7 @@ map_state = {
 }
 width, height = mapl.parse_mapsize(map_state.get("size"))
 placed, unplaced = mapl.get_placed_combatants()
+map_state["combatants"] = placed
 teams = {}
 for co in c.combatants:
     if co.name.lower() in ["dm", "map", "lair"] or autolib.isGhost(c, co):
@@ -118,44 +124,89 @@ if (inp1.lower() in ['m', 'map']) or not map_info:
     map_name = inp2 if inp1.lower() in ['m', 'map'] else ""
     message = presets.load_specific_map(map_state, map_attach, map_name)
     width, height = mapl.parse_mapsize(map_state.get("size"))
+    map_info = {"size": f"{width}x{height}", "background": map_state.get("bg_image", ""), "options": map_state.get("mapoptions", "")}
     if unplaced:
         mapl.place_combatants(placed, unplaced, width, height, out, map_state)
-    map_info = {"size": f"{width}x{height}", "background": map_state.get("bg_image", ""), "options": map_state.get("mapoptions", "")}
     map_url = mapl.generate_map_image(map_info=map_info)
     command_list.append(f'{pref}embed {message} -image "{map_url}"')
     new_combat = True
 
+# Place any unplaced combatants on the map
 if unplaced:
     mapl.place_combatants(placed, unplaced, width, height, out, map_state)
-    map_url = mapl.generate_map_image()
+    map_url = mapl.generate_map_image(map_state=map_state)
     command_list.append(f'{pref}embed -title "Map Setup Complete!" -desc "All combatants have been placed on the map." -image "{map_url}"')
     new_combat = True
-
+    
 if not party_names:
     err(helpl.no_players)
 
-current_init = ""
-if c.current is None:
-    title = f'Booting up ancient artificial intelligence! :robot:'
-    c_none_desc = ""
-    if not monster_names:
-        c_none_desc = f'_No monsters found in initiative!_\n\nThat\'s fine, feel free to add them any time and run `{cmd}` every time it\'s the monster\'s turn!'
-        command_list.append(f'{pref}embed -title "{title}" -desc "{c_none_desc}"')
-        return command + nl.join(command_list)   
-    else:
-        command_list.append(f'{pref}init next')
-        current_init = combatants[0].name
-else:
-    current_init = c.current.name
+# Initialize overlays and descriptions
+overlays = []
+desc = []
 
+# Remove dead monsters from combat
+dead_monster_names = []
+if targl.dead_monsters:
+    for dead_monster in targl.dead_monsters:
+        dead_monster_names.append(dead_monster.name)
+        mapl.update_combatant_note(dead_monster, map_state, color="gy")
+        dead_monster.set_group("Dead monsters")
+    map_url = mapl.generate_map_image(overlays, map_state=map_state)
+    command_list.append(
+        pref + core.make_embed(
+            title="Removing Dead Monsters", 
+            desc="**The following dead monsters were found:**\n" + ", ".join(dead_monster_names)
+        ) + f" -image {map_url}"
+    )
+    command_list.append(
+        f"{pref}i n" if c.current and c.current.name in dead_monster_names else f'{pref}i remove "Dead monsters"'
+    )
+    if not targl.monsters:
+        command_list.append(
+            pref + core.make_embed(
+                title="No monsters found in initiative!",
+                desc=f'All monsters have been defeated!\n\nFeel free to add more at any time and run `{cmd}` to place them on the map.'
+            )
+        )
+        return command + nl.join(command_list)
+    new_combat = True
+
+# Check if there are any monsters in initiative
+if not targl.monsters:
+    command_list.append(
+        pref + core.make_embed(
+            title="No monsters found in initiative!",
+            desc=f'That\'s fine, feel free to add them any time and run `{cmd}` every time it\'s the monster\'s turn!'
+        )
+    )
+    return command + nl.join(command_list)
+
+# Check if it's the first round of combat
+current_init = combatants[0].name if not c.current else c.current.name
+if c.current is None:
+    command_list.append(f'{pref}i n')
+
+# Check if it's a lair action turn
 if current_init.casefold() in ['map', 'dm', 'lair']:
     title = f'Waiting on Lair Action :dragon:'
     desc_text = f'Use `{pref}i n` if there are no actions to take this round!'
     command_list.append(f'{pref}embed -title "{title}" -desc "{desc_text}"')
     return command + nl.join(command_list)
 
+current_combatant = c.get_combatant(current_init)
+
+# It's a group's turn
+if not current_combatant:
+    current_combatant = c.get_group(current_init)
+    if current_combatant:
+        title = f'It\'s a group\'s turn! :dragon:'
+        desc_text = f"Waiting on **{current_init}** to play their turn!"
+        command_list.append(f'{pref}embed -title "{title}" -desc "{desc_text}"')
+        return command + nl.join(command_list)
+
 # It's a player's turn
-if (current_init not in monster_names) or autolib.hasMonsterGroup(c):
+if not current_combatant.monster_name:
     title = f'It\'s a player turn! :mage:'
     desc_text = f"Waiting on **{current_init}** to play their turn!"
     if not get_uvar('mapStates'):
@@ -163,9 +214,17 @@ if (current_init not in monster_names) or autolib.hasMonsterGroup(c):
     command_list.append(f'{pref}embed -title "{title}" -desc "{desc_text}"')
     return command + nl.join(command_list)
 
+# Current combatant has the "Stop Automation" effect
+if current_combatant.monster_name and current_combatant.get_effect("Stop Automation (auto)"):
+    title = f'Stopping automation for {current_combatant.name}'
+    desc_text = f"Automation has been stopped for **{current_combatant.name}**'s turn! Use `{pref}i n` to continue automation!"
+    command_list.append(f'{pref}embed -title "{title}" -desc "{desc_text}"')
+    return command + nl.join(command_list)
+
+# New combat current combatant is a monster
 if new_combat:
-    title = f'Booting up ancient artificial intelligence! :robot:'
-    desc_text = f'\n:robot: _Auto-attack sequence initiated!_\n\nAutomating the following monsters:\n**{", ".join(monster_names)}**\n\n**Use `{cmd}` again now to automate all monsters in combat!**'
+    title = f'Ready to automate monsters! :robot:'
+    desc_text = f'''**Use `{cmd}` again to automate the following monsters:**\n{", ".join([m for m in monster_names if m not in dead_monster_names])}'''
     command_list.append(f'{pref}embed -title "{title}" -desc "{desc_text}"')
     return command + nl.join(command_list)
   
@@ -526,8 +585,7 @@ def process_monster_turn(indexed_combatant, out, overlays, desc, command_list, s
     
     # Check if map is present
     if map_attach and location:
-        monster_speed = mobl.get_monster_speed(monster_name)[0]
-        monster_move_verb = mobl.get_monster_speed(monster_name)[1]
+        monster_speed, monster_move_verb = mobl.get_monster_speed(monster_name)
 
         start_pos, size_m = map_data["pos"], map_data["size_mod"]
         
@@ -678,7 +736,7 @@ def process_monster_turn(indexed_combatant, out, overlays, desc, command_list, s
                 if ranged_attacks:
                     # Choose a ranged attack and its properties
                     chosen_ranged_attack = randchoice(ranged_attacks)
-                    attack_range = int(chosen_ranged_attack.raw['automation'][1]['text'].split('range')[1].split('/')[0].strip())  # Extract range
+                    attack_range = int(chosen_ranged_attack.raw['automation'][1]['text'].split('range')[1].split('/')[0].split(" ft.")[0].strip())  # Extract range
 
                     # Check if the target is within range or move towards the edge of range
                     if distance > attack_range:
@@ -797,9 +855,6 @@ def process_map_absentee_monster_turn(indexed_combatant, command_list):
     command_list.append(f"""{pref}embed -title "{title}" -desc "{desc_text}" """)
     command_list.append(f'{pref}i n')
 
-# Initialize overlays and descriptions
-overlays = []
-desc = []
 
 
 ###### TEST SUITES ######
@@ -852,7 +907,7 @@ for indexed_combatant in indexed_cname_list:
         return command
     
     monster = c.get_combatant(indexed_combatant)    
-    if monster.monster_name:
+    if monster.monster_name and not monster.get_effect('Stop Automation (auto)'):
         if autolib.isMonster(monster) != current_enemy:
             title = f'''Automation Complete! It\'s the other side's turn now! :mage:'''
             desc_text = f'Waiting on **{indexed_combatant}** to play their turn!'
@@ -869,6 +924,9 @@ for indexed_combatant in indexed_cname_list:
         if indexed_combatant.casefold() in ['map', 'dm', 'lair'] and c.get_combatant(indexed_combatant).init == 20:
             title = f'Automation Complete! Waiting on Lair Action :dragon:'
             desc_text = f'Use `{pref}i n` if there are no actions to take this round!'
+        elif monster.get_effect('Stop Automation (auto)'):
+            title = f'Automation Complete! {indexed_combatant} is pausing automation!'
+            desc_text = f'Use `{pref}i n` to continue automation!'
         elif inp1.lower() in 'react':
             command_list.pop()
             title = f'Automation Complete! Pausing to allow player reaction! :mage:'

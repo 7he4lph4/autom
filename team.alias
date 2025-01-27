@@ -13,7 +13,7 @@ if combat():
         elif combat().me:
             for effect in combat().me.effects:
                 if effect.name.startswith("Team "):
-                    team = int("".join([e for e in effect if e.isdigit()]))
+                    team = int("".join([e for e in effect.name if e.isdigit()]))
                     break
 
 if len(args) < 1:
