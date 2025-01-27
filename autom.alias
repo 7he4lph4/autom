@@ -14,6 +14,13 @@ inp1 = "&1&"
 inp2 = "&2&"
 inp3 = "&3&"
 
+c = combat()
+
+if not c or inp == 'help' or inp == '?':
+    title = f'{cmd} works best when used with a combat initiative full of player characters and monsters!'
+    desc = f'Please start initiative and add your players and  monsters.\n\n`{cmd} help` for more info'
+    return f'embed -title "{title}" -desc "{desc}"'
+
 using(
     autolib = "ec14bc6e-81e4-4df7-86e9-5d64ed2fa9b7",
     # autolib test
@@ -21,6 +28,9 @@ using(
 
     core = "49f5f503-1c00-4f24-ba43-92e65c2c2fb6",
     presets = "c14e4526-4acb-4964-8ba9-f6861617ffdf",
+    #presets test
+    # presets = "9262c036-97ad-4c8b-a34c-ee0d351c06e4",
+
     helpl = "aacef7e2-fb6a-4786-9d26-193ed45e4916",
     
     # mapl = "4b5633ff-7082-4411-95b3-50970c30e832",
@@ -42,14 +52,9 @@ footer = f'{cmd} help | made by @alpha983'
 if inp1.lower() in ['m', 'map'] and inp2.lower() == 'list':
     return command + nl.join(presets.generate_list_embeds(footer))
 
-c = combat()
 
 title = helpl.help_title
 desc_text = helpl.help_text
-if not c or inp == 'help' or inp == '?':
-    title = f'{cmd} works best when used with a combat initiative full of player characters and monsters!'
-    desc = 'Please start initiative and add your players and  monsters.'
-    return f'embed -title "{title}" -desc "{desc_text}"'
 
 if inp1.lower() == 'lair':
     command_list.append(f'{pref}i add 0 Lair -p 20')
@@ -364,22 +369,6 @@ def find_adjacent_position(monster_location, target_position):
     closest_position = min(adjacent_positions, key=lambda p: ((p[0]-tx)**2 + (p[1]-ty)**2))
     return f"{alph[closest_position[0]]}{closest_position[1]}"
 
-def find_ranged_adjacent_position(monster_location, target_position, ideal_range):
-    ideal_cell_range = floor(ideal_range/5)
-    mx, my = alph.index(monster_location[0]), int(monster_location[1:])
-    tx, ty = alph.index(target_position[0]), int(target_position[1:])
-    
-    adjacent_positions = [
-        (mx-ideal_cell_range, my), (mx+ideal_cell_range, my), (mx, my-ideal_cell_range), (mx, my+ideal_cell_range),
-        (mx-ideal_cell_range, my-ideal_cell_range), (mx-ideal_cell_range, my+ideal_cell_range), (mx+ideal_cell_range, my-ideal_cell_range), (mx+ideal_cell_range, my+ideal_cell_range)
-    ]
-
-    mapX, mapY = width, height
-    adjacent_positions_filtered = core.filter(lambda coord: coord[0] >= 0 and coord[1] >= 1 and coord[0] < mapX and coord[1] <= mapY, adjacent_positions)
-    
-    closest_position = min(adjacent_positions, key=lambda p: ((p[0]-tx)**2 + (p[1]-ty)**2))
-    return f"{alph[closest_position[0]]}{closest_position[1]}"
-
 def get_targets_in_aoe(monster_location, aoe_attack, target_names):
     affected_targets = []
     for target_name in target_names:
@@ -534,43 +523,6 @@ def process_monster_turn(indexed_combatant, out, overlays, desc, command_list, s
         command_list.append(f'{pref}i n')  # Skip to next turn
         return
 
-    monster_effect_names = [effect.name.lower() for effect in monster.effects]
-    # Check if the monster is stunned
-    if "stunned" in monster_effect_names:
-        map_url = map_tools.generate_map_image(overlays)
-        title = f"Skipping stunned monster: {monster.name}"
-        description = f"{monster.name} is stunned. Its turn will be skipped."
-        command_list.append(f'{pref}{get_message.get_message(title=title, description=description, image=map_url)}')
-        command_list.append(f'{pref}i n')
-        return
-
-    # Check if the monster is paralysed
-    if "paralysed" in monster_effect_names:
-        map_url = map_tools.generate_map_image(overlays)
-        title = f"Skipping paralysed monster: {monster.name}"
-        description = f"{monster.name} is paralysed. Its turn will be skipped."
-        command_list.append(f'{pref}{get_message.get_message(title=title, description=description, image=map_url)}')
-        command_list.append(f'{pref}i n')
-        return
-
-    # Check if the monster is paralysed
-    if "petrified" in monster_effect_names:
-        map_url = map_tools.generate_map_image(overlays)
-        title = f"Skipping petrified monster: {monster.name}"
-        description = f"{monster.name} is petrified. Its turn will be skipped."
-        command_list.append(f'{pref}{get_message.get_message(title=title, description=description, image=map_url)}')
-        command_list.append(f'{pref}i n')
-        return
-
-    # Check if the monster is unconscious
-    if "unconscious" in monster_effect_names:
-        map_url = map_tools.generate_map_image(overlays)
-        title = f"Skipping unconscious monster: {monster.name}"
-        description = f"{monster.name} is unconscious. Its turn will be skipped."
-        command_list.append(f'{pref}{get_message.get_message(title=title, description=description, image=map_url)}')
-        command_list.append(f'{pref}i n')
-        return
-
     # Get location from note
     map_data = placed[indexed_combatant]
     location = map_data["location"]
@@ -697,12 +649,7 @@ def process_monster_turn(indexed_combatant, out, overlays, desc, command_list, s
                     if distance != ideal_distance:
                         move_distance = min(monster_speed, abs(distance - ideal_distance))
                         movement_direction = "towards" if distance > ideal_distance else "away from"
-                        target_loc = mapl.coords_to_loc(target_pos)
-                        start_loc = mapl.coords_to_loc(start_pos)
-                        move_to_loc = find_ranged_adjacent_position(start_loc, target_loc, min(ideal_distance, monster_speed))
-                        move_to_pos = mapl.loc_to_coords(move_to_loc)
-                        move_distance = distance_function(start_loc, move_to_loc)
-                        new_location, arrow, new_pos = move_towards(start_pos, move_to_pos, move_distance, unoccupied)
+                        new_location, arrow, new_pos = move_towards(start_pos, target_pos, move_distance, unoccupied)
                         mapl.update_position(monster, placed, new_pos, out)
                         if arrow:
                             overlays.append(arrow)
