@@ -5,6 +5,7 @@ using(
     mapl="51af2e97-64e3-444a-994c-61c45c3f0994",
 )
 
+### DEPRECATED BBCODE ###
 bbcode = """
 [url=https://ibb.co/TW0G3zm][img]https://i.ibb.co/y4kCjLW/Arena-of-Earth-Desert-Day-32x24.jpg[/img][/url]
 [url=https://ibb.co/KxbXvj7][img]https://i.ibb.co/yFdXjn5/Arena-of-Earth-Desert-Night-32x24.jpg[/img][/url]
@@ -59,50 +60,75 @@ bbcode = """
 """
 
 
-def extract_map_info(bb=bbcode):
+map_data = {
+    "Arena Of Earth Desert Day": {"size": "16x12", "image": "https://live.staticflickr.com/65535/54283121081_68314133e4_c.jpg"},
+    "Arena Of Earth Desert Night": {"size": "16x12", "image": "https://live.staticflickr.com/65535/54283121021_4be7bd4d80_c.jpg"},
+    "Arena Of Earth Jade Day": {"size": "16x12", "image": "https://live.staticflickr.com/65535/54283544950_f2de74070e_c.jpg"},
+    "Arena Of Earth Jade Day Retracted Stairs Overlay": {"size": "16x16", "image": "https://live.staticflickr.com/65535/54282231892_b84927d724_c.jpg"},
+    "Beach Dunes": {"size": "32x22", "image": "https://live.staticflickr.com/65535/54283367093_1e25e56240_h.jpg"},
+    "Crab Rock Seaside Clear": {"size": "20x14", "image": "https://live.staticflickr.com/65535/54282231882_ae4cd236ca_b.jpg"},
+    "Crab Rock Seaside Dreary": {"size": "20x14", "image": "https://live.staticflickr.com/65535/54283357524_ae886bf1d9_b.jpg"},
+    "Crystal Hill": {"size": "20x14", "image": "https://live.staticflickr.com/65535/54282231427_1353bdff4a_b.jpg"},
+    "Desert Crossroads Gridded Map Public": {"size": "20x13", "image": "https://live.staticflickr.com/65535/54283544970_52fb57f448_b.jpg"},
+    "Desert Island Tropical Day": {"size": "20x14", "image": "https://live.staticflickr.com/65535/54283121506_667a5e0346_b.jpg"},
+    "Desert Island Tropical Night": {"size": "20x14", "image": "https://live.staticflickr.com/65535/54283367433_fe213bab13_b.jpg"},
+    "Desert Oasis": {"size": "20x14", "image": "https://live.staticflickr.com/65535/54283356989_07c436a612_b.jpg"},
+    "Fallen Star Fallen Star Day": {"size": "20x14", "image": "https://live.staticflickr.com/65535/54283367448_9888545087_b.jpg"},
+    "Fallen Star Fallen Star Night": {"size": "20x14", "image": "https://live.staticflickr.com/65535/54283357469_205773d0cd_b.jpg"},
+    "Fighting Pit Muddy Dark": {"size": "20x12", "image": "https://live.staticflickr.com/65535/54282231327_1cc640d4cf_b.jpg"},
+    "Fighting Pit Muddy Light": {"size": "22x14", "image": "https://live.staticflickr.com/65535/54283366878_4ebed98257_o.jpg"},
+    "Green Hill Old Oak Day": {"size": "20x14", "image": "https://live.staticflickr.com/65535/54282231792_2463dd423b_b.jpg"},
+    "Green Hill Old Oak Day Canopy": {"size": "20x14", "image": "https://live.staticflickr.com/65535/54283367333_88dc9bf00d_b.jpg"},
+    "Green Hill Old Oak Night": {"size": "20x14", "image": "https://live.staticflickr.com/65535/54283367308_b34775b44f_b.jpg"},
+    "Green Hill Old Oak Night Canopy": {"size": "20x14", "image": "https://live.staticflickr.com/65535/54283357384_d8b6334047_b.jpg"},
+    "Greybanner Coliseum Day Large": {"size": "32x23", "image": "https://live.staticflickr.com/65535/54283367323_a30865b35c_h.jpg"},
+    "Greybanner Coliseum Day Small": {"size": "20x14", "image": "https://live.staticflickr.com/65535/54283121376_1a04e52939_b.jpg"},
+    "Haunted Marsh": {"size": "20x14", "image": "https://live.staticflickr.com/65535/54283366958_f42eca5b89_b.jpg"},
+    "Hillside Altar": {"size": "20x14", "image": "https://live.staticflickr.com/65535/54283120881_39125dfdfc_b.jpg"},
+    "Hillside Cave": {"size": "20x14", "image": "https://live.staticflickr.com/65535/54283366813_df8bd3722b_b.jpg"},
+    "Jungle River Crossing Lily Field Day": {"size": "20x14", "image": "https://live.staticflickr.com/65535/54283121406_371a3ff40e_b.jpg"},
+    "Jungle River Crossing Lily Field Night": {"size": "20x14", "image": "https://live.staticflickr.com/65535/54282231702_a5ef052bfb_b.jpg"},
+    "Lakebed Monolith": {"size": "20x14", "image": "https://live.staticflickr.com/65535/54283356979_1833580b11_b.jpg"},
+    "Ocean Calm": {"size": "16x16", "image": "https://live.staticflickr.com/65535/54282231677_cf72a9d14f_c.jpg"},
+    "Ocean Nighttime": {"size": "16x16", "image": "https://live.staticflickr.com/65535/54282231642_b6ac409f92_c.jpg"},
+    "Ocean Rough": {"size": "16x16", "image": "https://live.staticflickr.com/65535/54283545075_d2df331017_c.jpg"},
+    "Ocean Storm": {"size": "16x16", "image": "https://live.staticflickr.com/65535/54283545110_d7accd4c79_c.jpg"},
+    "Ocean Tropical": {"size": "16x16", "image": "https://live.staticflickr.com/65535/54283121251_a51af52cec_c.jpg"},
+    "Pumpkin Hill": {"size": "20x14", "image": "https://live.staticflickr.com/65535/54283356929_60b3db522e_b.jpg"},
+    "Roadside Rise": {"size": "20x15", "image": "https://live.staticflickr.com/65535/54283120676_b788ca562e_b.jpg"},
+    "Shattered Sky Astral Blue Star Background": {"size": "20x14", "image": "https://live.staticflickr.com/65535/54283357264_931cfe3d21_b.jpg"},
+    "Shattered Sky Astral Red Star Background": {"size": "20x14", "image": "https://live.staticflickr.com/65535/54283367158_b8db23c1fb_b.jpg"},
+    "Shattered Sky Astral Sea Blue Star": {"size": "20x14", "image": "https://live.staticflickr.com/65535/54283367188_4874a0d0d2_b.jpg"},
+    "Shattered Sky Astral Sea Red Star": {"size": "20x14", "image": "https://live.staticflickr.com/65535/54283121141_2809b39b4e_b.jpg"},
+    "Shifting Swamp Jungle": {"size": "20x14", "image": "https://live.staticflickr.com/65535/54283121131_35d8824810_b.jpg"},
+    "Shifting Swamp": {"size": "20x14", "image": "https://live.staticflickr.com/65535/54283120701_f0e4727d5d_b.jpg"},
+    "Silent Snowy Cemetery": {"size": "20x14", "image": "https://live.staticflickr.com/65535/54283367143_c78ace08fb_b.jpg"},
+    "Sinister Woodland Swamp Day Closed": {"size": "20x14", "image": "https://live.staticflickr.com/65535/54283367138_16de39e282_b.jpg"},
+    "Sinister Woodland Swamp Day Open": {"size": "20x14", "image": "https://live.staticflickr.com/65535/54283366763_4a343e9983_b.jpg"},
+    "Sinister Woodland Swamp Night Closed": {"size": "20x14", "image": "https://live.staticflickr.com/65535/54283544535_8a51601722_b.jpg"},
+    "Sinister Woodland Swamp Night Open": {"size": "20x14", "image": "https://live.staticflickr.com/65535/54283356799_a5e5e72ea7_b.jpg"},
+    "Winter Wilderness Lonely Oak Day A": {"size": "20x14", "image": "https://live.staticflickr.com/65535/54283120581_5eac27568c_b.jpg"},
+    "Winter Wilderness Lonely Oak Day B": {"size": "20x14", "image": "https://live.staticflickr.com/65535/54283356774_a8c4fb3c68_b.jpg"},
+    "Winter Wilderness Lonely Oak Night A": {"size": "20x14", "image": "https://live.staticflickr.com/65535/54282231167_18afeb6e61_b.jpg"},
+    "Winter Wilderness Lonely Oak Night B": {"size": "20x14", "image": "https://live.staticflickr.com/65535/54282231152_9f5369fc4e_b.jpg"}
+}
+
+
+def extract_map_info():
+    cell_pixel = "c50"  # Default cell pixel value
     map_dict = {}
-    custom_sizes = {
-        "Arena Of Earth Desert Day": "16x12",
-        "Arena Of Earth Desert Night": "16x12",
-        "Arena Of Earth Jade Day": "16x12",
-        "Arena Of Earth Jade Day Retracted Stairs Overlay": "16x16",
-        "Ocean Calm": "16x16",
-        "Ocean Nighttime": "16x16",
-        "Ocean Rough": "16x16",
-        "Ocean Storm": "16x16",
-        "Ocean Tropical": "16x16",
-        "Desert Crossroads Gridded Map Public": "16x10",
-        "Fighting Pit Muddy Dark": "16x9",
-        "Fighting Pit Muddy Light": "27x18",
-        "Roadside Rise": "16x12",
-    }
-    for line in bbcode.split("\n"):
-        if line == "":
-            continue
-        url = line.split("[img]")[1].split("[/img]")[0]
-        bbp = "".join(url.split("/")[-1].split(".")[:-1]).split("-")
-        sizes = [p for p in bbp if "x" in p and all(s.isdigit() for s in p.split("x"))]
-        name = " ".join([p for p in bbp if p not in sizes]).title()
-
-        # Use custom size if available, otherwise use size from URL or default
-        if name in custom_sizes:
-            size = custom_sizes[name]
-        elif len(sizes) >= 1:
-            url_width, url_height = core.map(int, sizes[0].split("x"))
-            if url_width < 16 or url_height < 11:
-                size = sizes[0]  # Use URL size if lesser than 16x11
-            else:
-                size = "16x11"  # Use standard size
-        else:
-            size = "16x11"  # Default size
-
-        cell_pixel = get_cell_pixel(size, name)
-        map_dict[name] = {"cell_pixel": cell_pixel, "size": size, "image": url}
+    for name, data in map_data.items():
+        map_dict[name] = {
+            "cell_pixel": cell_pixel,
+            "size": data["size"],
+            "image": data["image"]
+        }
     return map_dict
 
+map_presets = extract_map_info()
 
 def get_cell_pixel(size, map_name):
-    return "c40"
+    return "c50"
 
 
 map_presets = extract_map_info()
