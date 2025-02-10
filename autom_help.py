@@ -13,6 +13,7 @@ help_text = f"""How to use `{cmd}`:
 - Or, simply use `{cmd}` again to randomly pick one of the preset maps
     - (ideally you can keep spamming `{cmd}` after adding all players and monsters to combat initiative)
 - Use `{cmd}` to automate all monsters until the next player in combat initiative
+- Check out how to assign teams with `!team`.
 
 *Note*: If you'd like to keep using the old alias without maps support, you can use:
 `{pref}autol`
@@ -33,9 +34,9 @@ no_map = f"""
 `{cmd} map list`
 ### __Quick Setup Tips__
 - **Random Map:** `{cmd}`
-- **Small Map**: `{cmd} map pit`
+- **Small Map**: `{cmd} map arena`
 - **Medium Map**: `{cmd} map winter` / `{cmd} map sky` / `{cmd} map silent`
-- **Large Map**: `{cmd} map light`
+- **Large Map**: `{cmd} map large`
 \n__Note__: Using any of the above quick setup commands will automatically add all players and monsters currently in the combat initiative to either end of the map.
 \n:warning: Make sure to add all the players and monsters to combat initiative before loading the map with one of the above commands for a seamless assignment of combat positions.
 """
