@@ -17,6 +17,15 @@ inp3 = "&3&"
 c = combat()
 
 using(
+    helpl = "2020ae6c-6c1f-4044-a1a7-45137357ff6d", # importing only this early since targl accesses combat variables and combat() is null in below if block and errors out
+)
+
+if not c or inp == 'help' or inp == '?':
+    title = helpl.help_title
+    desc = helpl.help_text
+    return f'embed -title "{title}" -desc "{desc}"'
+
+using(
     autolib = "ec14bc6e-81e4-4df7-86e9-5d64ed2fa9b7",
     # autolib test
     # autolib = "b02daf2d-7cfc-4b0c-8fd2-f7be253e8f13",
@@ -26,7 +35,6 @@ using(
     #presets test
     # presets = "9262c036-97ad-4c8b-a34c-ee0d351c06e4",
 
-    helpl = "aacef7e2-fb6a-4786-9d26-193ed45e4916",
     
     # mapl = "4b5633ff-7082-4411-95b3-50970c30e832",
     # mapl test
@@ -40,11 +48,6 @@ using(
     # targl test
     targl = "0e93fa5a-ba10-4981-9efb-11f7e114101a"
 )
-
-if not c or inp == 'help' or inp == '?':
-    title = helpl.help_title
-    desc = helpl.help_text
-    return f'embed -title "{title}" -desc "{desc}"'
 
 command = f"""multiline{nl}"""
 footer = f'{cmd} help | made by @alpha983'
