@@ -16,11 +16,6 @@ inp3 = "&3&"
 
 c = combat()
 
-if not c or inp == 'help' or inp == '?':
-    title = f'{cmd} works best when used with a combat initiative full of player characters and monsters!'
-    desc = f'Please start initiative and add your players and  monsters.\n\n`{cmd} help` for more info'
-    return f'embed -title "{title}" -desc "{desc}"'
-
 using(
     autolib = "ec14bc6e-81e4-4df7-86e9-5d64ed2fa9b7",
     # autolib test
@@ -45,6 +40,11 @@ using(
     # targl test
     targl = "0e93fa5a-ba10-4981-9efb-11f7e114101a"
 )
+
+if not c or inp == 'help' or inp == '?':
+    title = helpl.help_title
+    desc = helpl.help_text
+    return f'embed -title "{title}" -desc "{desc}"'
 
 command = f"""multiline{nl}"""
 footer = f'{cmd} help | made by @alpha983'
