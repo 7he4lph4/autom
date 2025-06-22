@@ -33,6 +33,40 @@ monster_buckets = {
     'n': ["f34b0e24-c7c5-4958-b0a1-069c38ed19cf"]
 }
 
+#2025 MM
+monster_buckets_2025 = {
+    'a': ['27eeb980-bb4c-40aa-97a7-9a6df13f1524', '3e9963a1-eee7-4ffc-a703-3cb8290eea94'],
+    'b': ['27eeb980-bb4c-40aa-97a7-9a6df13f1524'],
+    'c': ['27eeb980-bb4c-40aa-97a7-9a6df13f1524', 'f50cf38b-e496-4782-b780-a0ca8490abc7'],
+    'd': ['f50cf38b-e496-4782-b780-a0ca8490abc7'],
+    'e': ['f50cf38b-e496-4782-b780-a0ca8490abc7'],
+    'f': ['689fde77-d736-4b0a-af1e-dabe069185eb', 'f50cf38b-e496-4782-b780-a0ca8490abc7'],
+    'g': ['689fde77-d736-4b0a-af1e-dabe069185eb', 'a18d8ff9-447e-47de-82db-c8c5c0acc748'],
+    'h': ['a18d8ff9-447e-47de-82db-c8c5c0acc748'],
+    'i': ['a18d8ff9-447e-47de-82db-c8c5c0acc748'],
+    'j': ['a18d8ff9-447e-47de-82db-c8c5c0acc748'],
+    'k': ['a18d8ff9-447e-47de-82db-c8c5c0acc748'],
+    'l': ['a18d8ff9-447e-47de-82db-c8c5c0acc748'],
+    'm': ['a18d8ff9-447e-47de-82db-c8c5c0acc748', 'a6fa567c-fc5a-40d2-a7e6-0ba302b221a1'],
+    'n': ['a6fa567c-fc5a-40d2-a7e6-0ba302b221a1'],
+    'o': ['a6fa567c-fc5a-40d2-a7e6-0ba302b221a1'],
+    'p': ['a6fa567c-fc5a-40d2-a7e6-0ba302b221a1'],
+    'q': ['a6fa567c-fc5a-40d2-a7e6-0ba302b221a1'],
+    'r': ['3b9ad675-5607-4875-ba1a-7acb14cc3908', 'a6fa567c-fc5a-40d2-a7e6-0ba302b221a1'],
+    's': ['3b9ad675-5607-4875-ba1a-7acb14cc3908', 'fb98d8f5-3519-4805-b8a4-b0b416473f15'],
+    't': ['fb98d8f5-3519-4805-b8a4-b0b416473f15'],
+    'u': ['fb98d8f5-3519-4805-b8a4-b0b416473f15'],
+    'v': ['fb98d8f5-3519-4805-b8a4-b0b416473f15'],
+    'w': ['fb98d8f5-3519-4805-b8a4-b0b416473f15'],
+    'x': ['fb98d8f5-3519-4805-b8a4-b0b416473f15'],
+    'y': ['ac575203-5c95-4813-ae1e-d68a6e78c7f7', 'fb98d8f5-3519-4805-b8a4-b0b416473f15'],
+    'z': ['ac575203-5c95-4813-ae1e-d68a6e78c7f7']
+}
+
+dnd_version = ctx.guild.servsettings().version
+if dnd_version == "2024":
+    monster_buckets = monster_buckets_2025
+
 override_db = load_json(get_gvar("07bc51ca-97bc-4927-bc92-3b3aea924634"))
 
 def get_monster_data(monster_name, data_needed=None):
@@ -248,3 +282,113 @@ def get_aoe_attacks(monster_name):
                 monster_attacks.append(attack_info)
 
     return monster_attacks
+
+# Retrieve the multiattack text from the expanded mobl DB.
+def getMonActionsFromMobl(monster_name):
+    monster_data = get_monster_data(monster_name)
+    if not monster_data:
+        return ""
+    actions = monster_data.get("actions", {})
+    multiattack_text = ""
+    # Look for a key that matches "Multiattack" (case-insensitive)
+    for key in actions:
+        if key.lower() == "multiattack":
+            multiattack_text = actions[key]
+            break
+    return multiattack_text
+
+# Parse the multiattack text (as returned by getMonActionsFromMobl) into a dictionary.
+def getMultiAttacksFromMobl(monster_name):
+    multi_atks = {}
+    # Get the monster's data using the mobl module (assumes mobl.get_monster_data is available)
+    monster_data = mobl.get_monster_data(monster_name)
+    if not monster_data:
+        return multi_atks
+
+    actions = monster_data.get("actions", {})
+    multiattack_text = ""
+    # Look for a key matching "Multiattack" (case-insensitive)
+    for key in actions:
+        if key.lower() == "multiattack":
+            multiattack_text = actions[key]
+            break
+    if multiattack_text == "":
+        return multi_atks
+
+    # Attempt to extract the attack segment.
+    # If the text contains "attacks:" use the part after the colon, otherwise use the part after "makes "
+    attack_segment = ""
+    if "attacks:" in multiattack_text:
+        parts = multiattack_text.split(":")
+        if len(parts) > 1:
+            attack_segment = parts[1].split(".")[0]
+    elif "makes " in multiattack_text:
+        parts = multiattack_text.split("makes ")
+        if len(parts) > 1:
+            attack_segment = parts[1].split(" attack")[0]
+    attack_segment = attack_segment.strip()
+
+    # Replace word numbers with digits
+    num_map = {"one": "1", "two": "2", "three": "3", "four": "4",
+               "five": "5", "six": "6", "seven": "7", "eight": "8", "nine": "9"}
+    for word in num_map:
+        # Replace with spaces around to avoid accidental replacements in longer words
+        attack_segment = attack_segment.replace(word, num_map[word])
+    # Remove extra instances of "and " to simplify parsing
+    attack_segment = attack_segment.replace("and ", "")
+
+    # The following loop looks for the pattern "X with its Y" where X is a digit and Y is an attack name.
+    while " with its " in attack_segment:
+        idx = attack_segment.find(" with its ")
+        # Assume the digit is the last character before that phrase
+        if idx >= 1:
+            atk_num = attack_segment[idx-1]
+        else:
+            atk_num = "1"
+        # Extract the attack name: take the word immediately following " with its "
+        after_phrase = attack_segment[idx + len(" with its "):]
+        # Use a simple split on space to get the first word as the attack name
+        parts_after = after_phrase.split(" ")
+        if parts_after:
+            atk_name = parts_after[0]
+            # Remove a trailing comma or period if present
+            if atk_name.endswith(",") or atk_name.endswith("."):
+                atk_name = atk_name[:-1]
+            # Remove a trailing "s" if present (as in plural form)
+            if atk_name.endswith("s"):
+                atk_name = atk_name[:-1]
+            multi_atks[atk_name.lower()] = atk_num
+        # Remove the processed segment from attack_segment
+        pattern = atk_num + " with its " + atk_name
+        attack_segment = attack_segment.replace(pattern, "").strip()
+
+    # If no "with its" pattern was found but there's still content, try splitting by space.
+    if not multi_atks and " " in attack_segment:
+        parts = attack_segment.split(" ")
+        if len(parts) >= 2:
+            atk_num = parts[0]
+            atk_name = parts[1]
+            # Clean up the attack name if needed
+            if atk_name.endswith(",") or atk_name.endswith("."):
+                atk_name = atk_name[:-1]
+            multi_atks[atk_name.lower()] = atk_num
+
+    # Fallback: if still no attacks were extracted, try converting the whole segment to a number.
+    try:
+        attacknum = int(attack_segment.strip())
+        # If this works, you may decide to fall back on selecting random attacks,
+        # similar to your previous logic (this code assumes you have indexed_combatant and combatants available)
+        # For example:
+        # x = 0
+        # while x < attacknum:
+        #     atk_name = autolib.getAttack(indexed_combatant, combatants)
+        #     if atk_name in multi_atks:
+        #         atk_num = str(int(multi_atks[atk_name]) + 1)
+        #     else:
+        #         atk_num = "1"
+        #     multi_atks[atk_name.lower()] = atk_num
+        #     x += 1
+    except:
+        pass
+
+    return multi_atks
