@@ -6,13 +6,14 @@ c = combat()
 party = []
 monsters, dead_monsters = [], []
 
-for co in c.combatants:
-    if not co.hp or co.name.lower() in ["dm", "map", "lair"]:
-        continue
-    if 0 < co.hp:
-        (monsters if autolib.isMonster(co) else party).append(co)
-    elif autolib.isMonster(co):
-        dead_monsters.append(co)
+if c:
+    for co in c.combatants:
+        if not co.hp or co.name.lower() in ["dm", "map", "lair"]:
+            continue
+        if 0 < co.hp:
+            (monsters if autolib.isMonster(co) else party).append(co)
+        elif autolib.isMonster(co):
+            dead_monsters.append(co)
 
 
 def get_target_lists(targs={}):
@@ -49,3 +50,35 @@ def sort_health(target_list, descending=False, true_hp=False):
         reverse=(descending),
         key=((lambda t: t.hp) if true_hp else state_sort),
     )
+
+
+def get_teams():
+    teams = {}
+    for co in c.combatants:
+        if not co.hp or co.name.lower() in ["dm", "map", "lair"]:
+            continue
+        if any(effect.name.startswith("Ghost (auto)") for effect in co.effects):
+            continue
+
+        for effect in co.effects:
+            if effect.name.startswith("Ally (auto)"):
+                teams[1] = teams.get(1, []) + [co.name]
+                break
+            if all(e in effect.name for e in ["Team", "(auto)"]):
+                team = int("".join([c for c in effect.name if c.isdigit()]))
+                teams[team] = teams.get(team, []) + [co.name]
+                break
+        else:
+            team = 1 if not autolib.isMonster(co) else max(max(teams, default=2), 2)
+            teams[team] = teams.get(team, []) + [co.name]
+    return teams
+
+
+def get_my_team(teams, name):
+    my_team, enemies = 1, []
+    for t in teams:
+        if name in teams[t]:
+            my_team = t
+        else:
+            enemies += teams[t]
+    return my_team, enemies

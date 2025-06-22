@@ -364,12 +364,17 @@ def scale_coords(coords, scale):
 
 
 def distance(coord1, coord2):
-    dx, dy = abs(coord2[0] - coord1[0]), abs(coord2[1] - coord1[1])
-    if 0 < (dy % 2):
-        dy //= 2
-    else:
-        dx //= 2
-    return dx + dy
+    return sqrt((coord2[0] - coord1[0]) ** 2 + (coord2[1] - coord1[1]) ** 2)
+
+
+def get_nearest_coords(coords1, coords2):
+    dist, c1_nearest, c2_nearest = -1, (0, 1), (0, 1)
+    for gc1 in coords1:
+        for gc2 in coords2:
+            d = distance(gc1, gc2)
+            if d < dist or dist < 0:
+                dist, c1_nearest, c2_nearest = d, gc1, gc2
+    return dist, c1_nearest, c2_nearest
 
 
 def get_nearest(pos1, size1, pos2, size2):
