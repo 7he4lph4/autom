@@ -15,6 +15,12 @@ using(
     mobl="65c27eae-11c3-4b5c-90e5-472bc49f0037",
 )
 
+def get_combatant_team(combatant_name, teams):
+    """Get the team number for a given combatant"""
+    for team_num, team_members in teams.items():
+        if combatant_name in team_members:
+            return team_num
+    return 1  # Default fallback
 
 def mapPresent():
     map_combatant = None
@@ -213,9 +219,14 @@ def update_adjacent(data, placed):
             pc["adjacent"].append(data["combatant"].name)
 
 
-def process_map_combatant(combatant, placed):
+def process_map_combatant(combatant, placed, teams=None, team_colors=None):
     data = parse_note(combatant.note)
-    data["color"] = data.get("color", "r" if autolib.isMonster(combatant) else "b")
+    if teams and team_colors:
+        combatant_team = get_combatant_team(combatant.name, teams)
+        default_color = team_colors.get(combatant_team, "r")
+    else:
+        default_color = "r" if autolib.isMonster(combatant) else "b"
+    data["color"] = data.get("color", default_color)
     data["combatant"] = combatant
     if "location" in data:
         data["pos"] = loc_to_coords(data["location"])
@@ -225,15 +236,15 @@ def process_map_combatant(combatant, placed):
     return data, False
 
 
-def get_placed_combatants():
+def get_placed_combatants(teams=None, team_colors=None):
     placed, unplaced = {}, {}
     for co in c.combatants:
         if typeof(co) == "SimpleGroup":
             for gco in co.combatants:
-                data, p = process_map_combatant(gco, placed)
+                data, p = process_map_combatant(gco, placed, teams, team_colors)
                 (placed if p else unplaced)[gco.name] = data
         elif co.name.lower() not in ["map", "dm", "lair"]:
-            data, p = process_map_combatant(co, placed)
+            data, p = process_map_combatant(co, placed, teams, team_colors)
             (placed if p else unplaced)[co.name] = data
     return placed, unplaced
 
@@ -263,7 +274,7 @@ def update_occupied(occupied_grid, space_mod, data, width, height):
                 occupied_grid.pop(x)
 
 
-def place_combatants(placed, unplaced, width, height, out, map_state):
+def place_combatants(placed, unplaced, width, height, out, map_state, teams=None, team_colors=None):
     size_groups = {"G": [], "H": [], "L": [], "M": []}
     for upc, data in unplaced.items():
         if not mobl.get_stored_monster_data(data.combatant.monster_name):

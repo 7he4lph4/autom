@@ -8,6 +8,8 @@ args = argparse(&ARGS&)
 cname_list, command_list, combatant_mismatch = [],[],[]
 multiattack, spell_viable, counter = False, False, 0
 
+team_colors = {1: "b", 2: "r", 3: "y", 4: "g", 5: "o", 6: "p"}
+
 raw_inp = "&*&"
 inp = "&*&".lower().replace('"', '')
 inp1 = "&1&"
@@ -36,9 +38,9 @@ using(
     # presets = "9262c036-97ad-4c8b-a34c-ee0d351c06e4",
 
     
-    # mapl = "4b5633ff-7082-4411-95b3-50970c30e832",
+    # mapl = "faa1ca51-5c75-401c-be46-8650472e68f2",
     # mapl test
-    mapl = "faa1ca51-5c75-401c-be46-8650472e68f2",
+    mapl = "1d668d94-2807-47ca-b07c-e414b3342b5f",
     
     # mobl = "65c27eae-11c3-4b5c-90e5-472bc49f0037",
     # mobl test
@@ -108,8 +110,7 @@ map_state = {
     "bg_image": map_info.get("background", "")
 }
 width, height = mapl.parse_mapsize(map_state.get("size"))
-placed, unplaced = mapl.get_placed_combatants()
-map_state["combatants"] = placed
+
 teams = {}
 for co in c.combatants:
     if co.name.lower() in ["dm", "map", "lair"] or autolib.isGhost(c, co):
@@ -125,6 +126,20 @@ for co in c.combatants:
     else:
         team = 1 if not autolib.isMonster(co) else max(max(teams, default=2),2)
         teams[team] = teams.get(team, []) + [co.name]
+
+placed, unplaced = mapl.get_placed_combatants(teams, team_colors)
+map_state["combatants"] = placed
+
+# Update colors for already placed combatants based on teams
+for combatant_name, data in placed.items():
+    combatant = data.get("combatant")
+    if combatant:
+        combatant_team = mapl.get_combatant_team(combatant_name, teams)
+        new_color = team_colors.get(combatant_team, "r")
+        data["color"] = new_color
+        # Update the combatant's note to reflect new color
+        mapl.update_combatant_note(combatant, {}, color=new_color)
+
 out = {}
 
 new_combat = False
@@ -134,14 +149,14 @@ if (inp1.lower() in ['m', 'map']) or not map_info:
     width, height = mapl.parse_mapsize(map_state.get("size"))
     map_info = {"size": f"{width}x{height}", "background": map_state.get("bg_image", ""), "options": map_state.get("mapoptions", "")}
     if unplaced:
-        mapl.place_combatants(placed, unplaced, width, height, out, map_state)
+        mapl.place_combatants(placed, unplaced, width, height, out, map_state, teams, team_colors)
     map_url = mapl.generate_map_image(map_info=map_info)
     command_list.append(f'{pref}embed {message} -image "{map_url}"')
     new_combat = True
 
 # Place any unplaced combatants on the map
 if unplaced:
-    mapl.place_combatants(placed, unplaced, width, height, out, map_state)
+    mapl.place_combatants(placed, unplaced, width, height, out, map_state, teams, team_colors)
     map_url = mapl.generate_map_image(map_state=map_state)
     command_list.append(f'{pref}embed -title "Map Setup Complete!" -desc "All combatants have been placed on the map." -image "{map_url}"')
     new_combat = True
@@ -901,7 +916,8 @@ for indexed_combatant in indexed_cname_list:
             process_map_absentee_monster_turn(indexed_combatant, command_list)
         else:
             process_monster_turn(indexed_combatant, out, overlays, desc, command_list, snippets)
-            # toggle_monster_color(monster, 'r' if current_enemy else 'b')
+            monster_team = mapl.get_combatant_team(monster.name, teams)
+            toggle_monster_color(monster, team_colors.get(monster_team, 'r'))
     else: # Handle non-monster combatants
         if indexed_combatant.casefold() in ['map', 'dm', 'lair'] and c.get_combatant(indexed_combatant).init == 20:
             title = f'Automation Complete! Waiting on Lair Action :dragon:'
