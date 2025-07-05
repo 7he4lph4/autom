@@ -26,9 +26,9 @@ if not c or inp == 'help' or inp == '?':
     return f'embed -title "{title}" -desc "{desc}"'
 
 using(
-    autolib = "b02daf2d-7cfc-4b0c-8fd2-f7be253e8f13",
-    # autolib test
     # autolib = "ec14bc6e-81e4-4df7-86e9-5d64ed2fa9b7",
+    # autolib test
+    autolib = "b02daf2d-7cfc-4b0c-8fd2-f7be253e8f13",
 
     core = "49f5f503-1c00-4f24-ba43-92e65c2c2fb6",
     presets = "c14e4526-4acb-4964-8ba9-f6861617ffdf",
@@ -36,17 +36,17 @@ using(
     # presets = "9262c036-97ad-4c8b-a34c-ee0d351c06e4",
 
     
-    mapl = "faa1ca51-5c75-401c-be46-8650472e68f2",
-    # mapl test
     # mapl = "4b5633ff-7082-4411-95b3-50970c30e832",
+    # mapl test
+    mapl = "faa1ca51-5c75-401c-be46-8650472e68f2",
     
-    mobl = "56f70775-86f6-46c5-ae74-acb839bbee74",
-    # mobl test
     # mobl = "65c27eae-11c3-4b5c-90e5-472bc49f0037",
+    # mobl test
+    mobl = "56f70775-86f6-46c5-ae74-acb839bbee74",
 
-    targl = "f8369cc0-8ab0-42a5-8dfd-4ab7f34c0e61",
+    #targl = "f8369cc0-8ab0-42a5-8dfd-4ab7f34c0e61",
     # targl test
-    # targl = "0e93fa5a-ba10-4981-9efb-11f7e114101a"
+    targl = "0e93fa5a-ba10-4981-9efb-11f7e114101a"
 )
 
 command = f"""multiline{nl}"""
@@ -509,6 +509,27 @@ def find_best_target(monster, target_names, move_coords=[], distances={}, max_su
     # If all targets have large monsters nearby, choose a random target from the valid ones (those with HP > 0)
     return randchoice([t.name for t, _ in target_hp]) if target_hp else None
 
+def getAttackText(attack):
+    """Extract the text from the attack's automation entries."""
+    for entry in attack.raw.get('automation', []):
+        if entry.get('type') == 'text' and 'text' in entry:
+            return entry['text']
+    return ''
+
+def extract_attack_range(attack):
+    """Safely extract the range from a ranged attack."""
+    text = getAttackText(attack)
+    if 'range' in text.lower():
+        try:
+            # Look for pattern like "range 150/600 ft." or "range 80 ft."
+            range_part = text.split('range')[1].split('/')[0].split('ft.')[0].strip()
+            # Extract just the numbers
+            range_value = ''.join(core.filter(str.isdigit, range_part))
+            return int(range_value) if range_value else 30
+        except ("IndexError", "ValueError"):
+            return 30
+    return 30
+
 def process_monster_turn(indexed_combatant, out, overlays, desc, command_list, snippets=""):
     monster = c.get_combatant(indexed_combatant)
     if not monster:
@@ -680,13 +701,15 @@ def process_monster_turn(indexed_combatant, out, overlays, desc, command_list, s
                 # Determine if the monster has ranged attacks
                 ranged_attacks = [
                     atk for atk in monster.attacks
-                    if 'Ranged Weapon Attack' in atk.raw.get('automation', [{}])[1].get('text', '')
+                    if 'Ranged Weapon Attack' in getAttackText(atk)
                 ]
 
                 if ranged_attacks:
                     # Choose a ranged attack and its properties
                     chosen_ranged_attack = randchoice(ranged_attacks)
-                    attack_range = int(chosen_ranged_attack.raw['automation'][1]['text'].split('range')[1].split('/')[0].split(" ft.")[0].strip())  # Extract range
+
+                    # Safely extract range from ranged attack
+                    attack_range = extract_attack_range(chosen_ranged_attack)
 
                     # Check if the target is within range or move towards the edge of range
                     if distance > attack_range:
