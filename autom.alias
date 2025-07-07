@@ -22,6 +22,12 @@ using(
     helpl = "2020ae6c-6c1f-4044-a1a7-45137357ff6d", # importing only this early since targl accesses combat variables and combat() is null in below if block and errors out
 )
 
+# Simple advanced help implementation without pagination
+if inp == 'advanced':
+    title = f"Advanced 🤖 Auto Monster AI Reference - Comprehensive Usage Guide"
+    desc = helpl.advanced_help_text
+    return f'embed -title "{title}" -desc "{desc}" -color {color}'
+
 if not c or inp == 'help' or inp == '?':
     title = helpl.help_title
     desc = helpl.help_text
