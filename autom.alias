@@ -668,7 +668,7 @@ def process_monster_turn(indexed_combatant, out, overlays, desc, command_list, s
             
             map_state["combatants"] = out
             
-            # Spellcasting logic
+            # Spellcasting logic - FIXED VERSION - Ongoing, more improvements coming
             spell_monst = monster.spellbook.caster_level
             if spell_monst:
                 spell_data = load_json(get_gvar("a1e23cdf-0510-480d-a616-59e2c46780ac"))
@@ -687,29 +687,59 @@ def process_monster_turn(indexed_combatant, out, overlays, desc, command_list, s
                     chosen_spell, chosen_spell_level = randchoice(viable_spells)
 
                 if chosen_spell:
-                    # Check if the monster needs to move to cast the spell
                     spell_range = get_spell_range(chosen_spell)
-                    ideal_distance = max(30, spell_range - 30)  # Stay 30 ft away from max range if possible
                     
-                    if distance != ideal_distance:
+                    # Better ideal distance: stay at 80% of max range for safety
+                    ideal_distance = max(25, int(spell_range * 0.8))
+                    
+                    if abs(distance - ideal_distance) > 5:  # Only move if significantly off target
                         move_distance = min(monster_speed, abs(distance - ideal_distance))
-                        movement_direction = "towards" if distance > ideal_distance else "away from"
-                        new_location, arrow, new_pos = move_towards(start_pos, target_pos, move_distance, unoccupied)
-                        mapl.update_position(monster, placed, new_pos, out)
-                        if arrow:
-                            overlays.append(arrow)
-                        desc.append(f"{indexed_combatant} uses {int(move_distance)} ft. out of their {monster_speed} ft. to {'move' if monster_move_verb == 'walk' else '*fly*'} {movement_direction} {chosen_target} for a better vantage point.")
                         
-                        # After movement, display the updated map
-                        map_state["combatants"] = out
-                        map_url = mapl.generate_map_image(overlays)
-                        command_list.append(f'{pref}embed -title "Monster Movement: {monster.name}" -desc "{desc[-1]}" -image "{map_url}"')
+                        if distance > ideal_distance:
+                            # Too far: move towards target
+                            new_location, arrow, new_pos = move_towards(start_pos, target_pos, move_distance, unoccupied)
+                            movement_direction = "towards"
+                        else:
+                            # Too close: calculate position away from target
+                            # Create a position in the opposite direction
+                            dx = start_pos[0] - target_pos[0]
+                            dy = start_pos[1] - target_pos[1]
+                            length = sqrt(dx*dx + dy*dy)
+                            
+                            if length > 0:
+                                # Normalize and scale to desired distance
+                                away_x = start_pos[0] + (dx / length) * (move_distance / 5)  # Convert to grid units
+                                away_y = start_pos[1] + (dy / length) * (move_distance / 5)
+                                away_pos = (max(0, min(width-1, round(away_x))), max(1, min(height, round(away_y))))
+                                new_location, arrow, new_pos = move_towards(start_pos, away_pos, move_distance, unoccupied)
+                            else:
+                                # If at same position, pick a random adjacent safe spot
+                                new_location, arrow, new_pos = move_towards(start_pos, start_pos, 0, unoccupied)
+                            movement_direction = "away from"
+                        
+                        # Only update if movement actually occurred
+                        if new_pos != start_pos:
+                            mapl.update_position(monster, placed, new_pos, out)
+                            if arrow:
+                                overlays.append(arrow)
+                            else:
+                                # Create manual arrow if move_towards didn't generate one
+                                distance_moved = round(mapl.distance(start_pos, new_pos)) * 5
+                                overlays.append(create_arrow_overlay(distance_moved, location, mapl.coords_to_loc(new_pos)))
+                                
+                            desc.append(f"{indexed_combatant} uses {int(move_distance)} ft. out of their {monster_speed} ft. to {'move' if monster_move_verb == 'walk' else '*fly*'} {movement_direction} {chosen_target} for optimal spell range.")
+                            
+                            # Display updated map
+                            map_state["combatants"] = out
+                            map_url = mapl.generate_map_image(overlays)
+                            command_list.append(f'{pref}embed -title "Monster Movement: {monster.name}" -desc "{desc[-1]}" -image "{map_url}"')
+                        else:
+                            desc.append(f"{indexed_combatant} holds position, already at optimal spell range.")
                     else:
-                        desc.append(f"{indexed_combatant} holds position, already at an ideal vantage point.")
+                        desc.append(f"{indexed_combatant} holds position, already at ideal vantage point.")
                     
                     # Cast the spell
                     command_list.append(f'{pref}i cast "{chosen_spell}" -t {chosen_target} -l {chosen_spell_level} -phrase ":robot: _Triggered by auto monster AI_"')
-                    desc.append(f"{indexed_combatant} casts {chosen_spell} at {chosen_target}.")
                     command_list.append(f'{pref}i n')
                     return
 
