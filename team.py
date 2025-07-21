@@ -37,19 +37,17 @@ Ghosts are ignored by automation:
 if not combat():
     err("Channel is not in combat!")
 
-monsters, names = [], []
+teammates = []
 for a in args:
     if a.startswith("all:"):
-        monsters.append(a[4:].lower())
+        monster_name = a[4:].lower()
+        for combatant in combat().combatants:
+            if combatant.monster_name and combatant.monster_name.lower() == monster_name:
+                teammates.append(combatant)
     else:
-        names.append(a.lower())
-
-teammates = [
-    c
-    for c in combat().combatants
-    if c.name.lower() in names
-    or (c.monster_name and c.monster_name.lower() in monsters)
-]
+        combatant = combat().get_combatant(a)
+        if combatant:
+            teammates.append(combatant)
 
 command = 'multiline\n!embed -title "'
 if team == "ghost":
