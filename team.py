@@ -3,23 +3,12 @@ args = &ARGS&
 pref, al = ctx.prefix, ctx.alias
 cmd = pref + al
 
-if combat():
-    team = 1
-    if 0 < len(args):
-        if args[0].isdigit():
-            team = int(args.pop(0))
-        if "ghost" in args[0].casefold():
-            team = "ghost"
-        elif combat().me:
-            for effect in combat().me.effects:
-                if effect.name.startswith("Team "):
-                    team = int("".join([e for e in effect.name if e.isdigit()]))
-                    break
 
-if len(args) < 1:
-    return (
-        'embed -title "Set Teams for Automation" -desc "'
-        + f"""
+if (len(args) < 1
+    or (len(args) == 1 and args[0].isdigit())
+    or args[0].casefold() in ["help", "h", "?"]
+):
+    return f'''embed -title "Set Teams for Automation" -desc "
 Players without an assigned team, as well as monsters with the `Ally (auto)` effect, will default to Team 1. Monsters without an assigned team will default to the highest team number greater than 1, or Team 2 if there are none.
 
 **Usage Examples:**
@@ -30,22 +19,33 @@ Players without an assigned team, as well as monsters with the `Ally (auto)` eff
 - `{cmd} 0 \\"all:awakened shrub\\"` resets teams for all Awakened Shrubs.
 
 Ghosts are ignored by automation:
-- `{cmd} ghost \\"all:awakened shrub\\"` sets all Awakened Shrubs to Ghost.\nRun the command again to remove the Ghost effect."""
-        + f'" -footer "{cmd}"'
-    )
+- `{cmd} ghost \\"all:awakened shrub\\"` sets all Awakened Shrubs to Ghost.\nRun the command again to remove the Ghost effect."
+-footer "{cmd}"'''
 
-if not combat():
-    err("Channel is not in combat!")
+c = combat()
+if not c:
+    return f'embed -title "Unable to Assign Teams" -desc "No combat found." -footer "{cmd}"'
+
+team = 1
+if args[0].isdigit():
+    team = int(args.pop(0))
+elif "ghost" in args[0].casefold():
+    team = "ghost"
+elif c.me:
+    for effect in c.me.effects:
+        if effect.name.startswith("Team "):
+            team = int("".join([e for e in effect.name if e.isdigit()]))
+            break
 
 teammates = []
 for a in args:
     if a.startswith("all:"):
         monster_name = a[4:].lower()
-        for combatant in combat().combatants:
+        for combatant in c.combatants:
             if combatant.monster_name and combatant.monster_name.lower() == monster_name:
                 teammates.append(combatant)
     else:
-        combatant = combat().get_combatant(a)
+        combatant = c.get_combatant(a)
         if combatant:
             teammates.append(combatant)
 
