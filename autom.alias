@@ -551,6 +551,556 @@ def extract_attack_range(attack):
             return 30
     return 30
 
+def parse_range(range_code, range_shape_map):
+    if not range_code:
+        return None, None, None, None
+    n = len(range_code)
+    # Handle just single-letter (e.g. 'S', 'T', 'V')
+    if n == 1:
+        shape_code = range_code
+        return None, shape_code, None, range_shape_map.get(shape_code, shape_code)
+    # Handle patterns like "60R5", "120L5", "15C"
+    i = 0
+    while i < n and range_code[i].isdigit():
+        i += 1
+    dist_ft = int(range_code[:i]) if i > 0 else None
+    # Next letter is shape
+    if i < n:
+        shape_code = range_code[i]
+        i += 1
+    else:
+        shape_code = None
+    # Remaining is size
+    size_ft = int(range_code[i:]) if i < n and range_code[i:].isdigit() else None
+    shape_name = range_shape_map.get(shape_code, shape_code)
+    return dist_ft, shape_code, size_ft, shape_name
+
+
+# **HELPER FUNCTIONS FOR EFFICIENT AoE PROCESSING**
+def get_team_positions(teams, placed, exclude_name=None):
+    """Pre-compute all creature positions by team - O(n)"""
+    team_positions = {}
+    all_positions = {}
+    
+    for team_num, team_members in teams.items():
+        team_positions[team_num] = []
+        for member_name in team_members:
+            if member_name in placed and member_name != exclude_name:
+                creature_data = {
+                    "name": member_name,
+                    "pos": placed[member_name]["pos"],
+                    "location": placed[member_name]["location"],
+                    "size_mod": placed[member_name].get("size_mod", 0),
+                    "team": team_num
+                }
+                team_positions[team_num].append(creature_data)
+                all_positions[member_name] = creature_data
+    
+    return team_positions, all_positions
+
+def creatures_in_circle(center_pos, radius_ft, all_positions):
+    """Fast circle collision detection using distance squared - O(n)"""
+    targets_hit = []
+    radius_squared = radius_ft ** 2
+    
+    for creature_data in all_positions.values():
+        creature_pos = creature_data["pos"]
+        creature_size = creature_data["size_mod"]
+        
+        # Check if any part of creature is within circle
+        hit = False
+        for dx in range(creature_size + 1):
+            for dy in range(creature_size + 1):
+                check_x = creature_pos[0] + dx
+                check_y = creature_pos[1] + dy
+                
+                # Distance squared (no sqrt needed = faster)
+                distance_squared = ((center_pos[0] - check_x) * 5) ** 2 + ((center_pos[1] - check_y) * 5) ** 2
+                
+                if distance_squared <= radius_squared:
+                    hit = True
+                    break
+            if hit:
+                break
+        
+        if hit:
+            targets_hit.append(creature_data)
+    
+    return targets_hit
+
+def find_optimal_circle_center(aoe_origin, aoe_size, chosen_target, caster_pos, caster_team, all_positions, width, height, spell_range):
+    """Ultra-efficient O(1) circle optimization using smart heuristics"""
+    
+    if aoe_origin == "Target":
+        # Target-centered spells - use smart positioning with max 3 candidates
+        
+        enemies = [pos for pos in all_positions.values() if pos["team"] != caster_team]
+        
+        if not enemies:
+            # No enemies - fallback to original target
+            target_pos = all_positions.get(chosen_target, {"pos": caster_pos})["pos"]
+            return mapl.coords_to_loc(target_pos), [all_positions[chosen_target]] if chosen_target in all_positions else []
+        
+        # **SMART CANDIDATE SELECTION - MAX 3 POSITIONS**
+        candidates = []
+        
+        # Candidate 1: Enemy centroid (optimal for clustered enemies)
+        enemy_center_x = sum(e["pos"][0] for e in enemies) / len(enemies)
+        enemy_center_y = sum(e["pos"][1] for e in enemies) / len(enemies)
+        centroid_pos = (round(enemy_center_x), round(enemy_center_y))
+        
+        # Validate centroid is within range and bounds
+        centroid_distance = sqrt((centroid_pos[0] - caster_pos[0])**2 + (centroid_pos[1] - caster_pos[1])**2) * 5
+        if (centroid_distance <= spell_range and 
+            0 <= centroid_pos[0] < width and 1 <= centroid_pos[1] <= height):
+            candidates.append(centroid_pos)
+        
+        # Candidate 2: Densest enemy position (best for spread enemies)
+        if len(enemies) > 1:
+            best_density_pos = None
+            max_nearby = 0
+            
+            for enemy in enemies[:min(3, len(enemies))]:  # Check only first 3 for efficiency
+                enemy_pos = enemy["pos"]
+                nearby_count = sum(1 for e in enemies if sqrt((e["pos"][0] - enemy_pos[0])**2 + (e["pos"][1] - enemy_pos[1])**2) * 5 <= aoe_size)
+                if nearby_count > max_nearby:
+                    max_nearby = nearby_count
+                    best_density_pos = enemy_pos
+            
+            if best_density_pos and best_density_pos not in candidates:
+                density_distance = sqrt((best_density_pos[0] - caster_pos[0])**2 + (best_density_pos[1] - caster_pos[1])**2) * 5
+                if density_distance <= spell_range:
+                    candidates.append(best_density_pos)
+        
+        # Candidate 3: Original target position (fallback)
+        if chosen_target in all_positions:
+            target_pos = all_positions[chosen_target]["pos"]
+            target_distance = sqrt((target_pos[0] - caster_pos[0])**2 + (target_pos[1] - caster_pos[1])**2) * 5
+            if target_distance <= spell_range and target_pos not in candidates:
+                candidates.append(target_pos)
+        
+        # If no valid candidates, use closest enemy within range
+        if not candidates:
+            valid_enemies = [e for e in enemies if sqrt((e["pos"][0] - caster_pos[0])**2 + (e["pos"][1] - caster_pos[1])**2) * 5 <= spell_range]
+            if valid_enemies:
+                closest_enemy = min(valid_enemies, key=lambda e: sqrt((e["pos"][0] - caster_pos[0])**2 + (e["pos"][1] - caster_pos[1])**2))
+                candidates.append(closest_enemy["pos"])
+    
+    else:
+        # Self-centered spells - true O(1)
+        candidates = [caster_pos]
+    
+    # **EVALUATE CANDIDATES - MAX 3 EVALUATIONS**
+    best_center = mapl.coords_to_loc(caster_pos)
+    best_score = -999
+    best_targets = []
+    
+    for candidate_pos in candidates:
+        score, targets = score_circle_position(candidate_pos, aoe_size, all_positions, caster_team)
+        if score > best_score:
+            best_score = score
+            best_center = mapl.coords_to_loc(candidate_pos)
+            best_targets = targets
+    
+    return best_center, best_targets
+
+def score_circle_position(center_pos, radius_ft, all_positions, caster_team):
+    """Optimized scoring - early exit when possible"""
+    targets_hit = []
+    score = 0
+    radius_squared = radius_ft ** 2
+    
+    for creature_data in all_positions.values():
+        creature_pos = creature_data["pos"]
+        creature_size = creature_data["size_mod"]
+        
+        # Quick distance check first (faster than full collision)
+        dx = abs(center_pos[0] - creature_pos[0]) * 5
+        dy = abs(center_pos[1] - creature_pos[1]) * 5
+        
+        # Skip if obviously too far (before expensive collision check)
+        if dx > radius_ft + (creature_size * 5) or dy > radius_ft + (creature_size * 5):
+            continue
+        
+        # Only do full collision check if potentially in range
+        hit = False
+        for sx in range(creature_size + 1):
+            for sy in range(creature_size + 1):
+                check_x = creature_pos[0] + sx
+                check_y = creature_pos[1] + sy
+                distance_squared = ((center_pos[0] - check_x) * 5) ** 2 + ((center_pos[1] - check_y) * 5) ** 2
+                
+                if distance_squared <= radius_squared:
+                    hit = True
+                    break
+            if hit:
+                break
+        
+        if hit:
+            targets_hit.append(creature_data)
+            score += 2 if creature_data["team"] != caster_team else -1
+    
+    return score, targets_hit
+# **HELPER FUNCTIONS FOR EFFICIENT AoE PROCESSING**
+
+
+# Spell Lookup Helper Functions
+def preprocess_spell_data(spell_list, spell_data):
+    """
+    Pre-process spell data for O(1) lookups
+    Returns: spell_levels, spell_ranges, spell_aoe_info dictionaries
+    """
+    spell_levels = {}
+    spell_ranges = {}
+    spell_aoe_info = {}
+    
+    # Range/AoE shape mapping for quick lookup
+    shape_map = {
+        "u": "Radius", "r": "Radius", "t": "Square", "q": "Square",
+        "g": "Cone", "p": "Line", "w": "Wall", "a": "Feet",
+        "s": "Self", "v": "Self", "y": "Sight", "z": "Willing", "x": "Unlimited"
+    }
+    
+    for spell_name in spell_list:
+        if spell_name in spell_data:
+            spell_info = spell_data[spell_name]
+            spell_levels[spell_name] = spell_info.get("l", 0)
+            
+            # Parse range/AoE from "r" key
+            range_code = spell_info.get("r", "")
+            range_value, aoe_size, shape_code = parse_spell_range_aoe(range_code)
+            
+            # Set spell range
+            if range_value == 0 and aoe_size > 0:
+                spell_ranges[spell_name] = aoe_size  # Self spells use AoE size as effective range
+            else:
+                spell_ranges[spell_name] = range_value if range_value > 0 else 30
+            
+            # Store AoE info if it has area effect
+            if aoe_size > 0 and shape_code in shape_map:
+                origin = "Self" if range_code.upper().startswith('S') else "Target"
+                spell_aoe_info[spell_name] = {
+                    "shape": shape_map[shape_code],
+                    "size": aoe_size,
+                    "origin": origin
+                }
+        else:
+            spell_ranges[spell_name] = 30  # Default range for unknown spells
+    
+    return spell_levels, spell_ranges, spell_aoe_info
+
+def parse_spell_range_aoe(range_code):
+    """
+    Parse a spell range code like 'SQ15', '60R5', '120L10'
+    Returns: (range_value, aoe_size, shape_code)
+    """
+    if not range_code:
+        return 30, 0, ""
+    
+    range_value = 0
+    aoe_size = 0
+    shape_code = ""
+    
+    # Handle "Self" cases like "SQ15" (thunderwave, etc.)
+    if range_code.upper().startswith('S'):
+        range_value = 0  # Self range
+        remaining = range_code[1:]
+        
+        # Find the last sequence of digits (AoE size)
+        aoe_nums = ""
+        i = len(remaining) - 1
+        while i >= 0 and remaining[i].isdigit():
+            aoe_nums = remaining[i] + aoe_nums
+            i -= 1
+        
+        if aoe_nums:
+            aoe_size = int(aoe_nums)
+        
+        # Find shape letter just before the numbers
+        if i >= 0 and aoe_nums:
+            shape_code = remaining[i].lower()
+    else:
+        # Extract leading numbers (range)
+        i = 0
+        range_nums = ""
+        while i < len(range_code) and range_code[i].isdigit():
+            range_nums += range_code[i]
+            i += 1
+        
+        if range_nums:
+            range_value = int(range_nums)
+        
+        # Find the last sequence of digits (AoE size) working backwards
+        aoe_nums = ""
+        j = len(range_code) - 1
+        while j >= i and range_code[j].isdigit():
+            aoe_nums = range_code[j] + aoe_nums
+            j -= 1
+        
+        if aoe_nums:
+            aoe_size = int(aoe_nums)
+            # Shape letter should be just before the AoE numbers
+            if j >= i and j < len(range_code):
+                shape_code = range_code[j].lower()
+    
+    return range_value, aoe_size, shape_code
+
+def get_viable_spells(monster, spell_levels):
+    """Get all spells the monster can currently cast, sorted by level (highest first)"""
+    viable_spells = [
+        (s, spell_levels[s])
+        for s in spell_levels
+        if monster.spellbook.can_cast(s, spell_levels[s])
+    ]
+    viable_spells.sort(key=lambda x: x[1], reverse=True)
+    return viable_spells
+# Spell Lookup Helper Functions
+
+# Spellcasting GOD Functions
+def can_move_into_spell_range(current_pos, target_pos, spell_range, monster_speed, unoccupied, occupied, monster_size_mod, target_distance):
+    """
+    Check if monster can move into spell range and return movement details
+    Returns: (can_move, move_distance, new_position)
+    """
+    distance_needed = target_distance - spell_range
+    
+    if distance_needed <= monster_speed and len(unoccupied) > 0:
+        move_distance = min(monster_speed, distance_needed + 5)  # +5 for safety margin
+        
+        # Calculate potential new position
+        total_distance = mapl.distance(current_pos, target_pos) * 5
+        dxy = mapl.subtract_coords(target_pos, current_pos)
+        ratio = min(move_distance / total_distance, 1) if total_distance > 0 else 0
+        
+        potential_pos = mapl.add_coords(current_pos, mapl.scale_coords(dxy, ratio))
+        potential_pos = (round(potential_pos[0]), round(potential_pos[1]))
+        
+        if potential_pos in unoccupied and potential_pos not in occupied:
+            return True, move_distance, potential_pos
+    
+    return False, 0, current_pos
+
+def attempt_spell_cast_in_range(monster, spell_name, spell_level, spell_range, target_distance, chosen_target, spell_aoe_info, teams, placed, indexed_combatant, overlays, desc, command_list, map_state, monster_pos, team_colors, width, height):
+    """Handle spell casting when already in range"""
+    debug_log = f"[CAST-IN-RANGE:{spell_name}:L{spell_level}:R{spell_range}:D{target_distance}]"
+    
+    # Build targeting and overlay
+    target_string = f"-t {chosen_target}"
+    
+    # **AoE OVERLAY DRAWING**
+    if spell_name in spell_aoe_info:
+        aoe_data = spell_aoe_info[spell_name]
+        aoe_shape = aoe_data["shape"]
+        aoe_size = aoe_data["size"]
+        aoe_origin = aoe_data["origin"]
+        
+        # Get team info and pre-compute positions once
+        monster_team = mapl.get_combatant_team(indexed_combatant, teams)
+        overlay_color = team_colors.get(monster_team, "r")
+        team_positions, all_positions = get_team_positions(teams, placed, indexed_combatant)
+        
+        # **CIRCLE/SPHERE HANDLING**
+        if aoe_shape in ["Radius", "Sphere"]:
+            best_center, targets_in_aoe = find_optimal_circle_center(
+                aoe_origin, aoe_size, chosen_target, monster_pos, 
+                monster_team, all_positions, width, height, spell_range
+            )
+            
+            # Create circle overlay and targeting string
+            circle_overlay = f"c{aoe_size}{overlay_color}{best_center}"
+            overlays.append(f"*{circle_overlay}")
+            target_string = build_target_string(targets_in_aoe) if targets_in_aoe else f"-t {chosen_target}"
+            
+            # Generate description
+            if targets_in_aoe:
+                enemies = [t for t in targets_in_aoe if t["team"] != monster_team]
+                allies = [t for t in targets_in_aoe if t["team"] == monster_team]
+                enemy_names = ", ".join([t["name"] for t in enemies])
+                ally_names = ", ".join([t["name"] for t in allies])
+                hit_desc = f"{len(enemies)} enemies: {enemy_names}" + (f" + ⚠️{len(allies)} allies: {ally_names}" if allies else "")
+                desc.append(f"{indexed_combatant} targets {best_center} with *{spell_name}* - {aoe_size} ft. radius hitting {hit_desc}")
+            else:
+                desc.append(f"{indexed_combatant} casts *{spell_name}* at {best_center}")
+            
+            # Display map with overlay
+            map_state["combatants"] = map_state.get("combatants", {})
+            map_url = mapl.generate_map_image(overlays)
+            command_list.append(f'{pref}embed -title "{monster.name} casts an AoE Spell - {spell_name} on the map!" -desc "{desc[-1]}" -image "{map_url}"')
+        else:
+            # Non-circle AoE fallback
+            desc.append(f"{indexed_combatant} casts *{spell_name}*")
+    else:
+        # Non-AoE spell
+        desc.append(f"{indexed_combatant} casts *{spell_name}* (Level {spell_level}) - Target at {target_distance} ft, spell range {spell_range} ft.")
+    
+    # Build spell phrase
+    spell_phrase = f":robot: _Auto Monster AI_ - Target: {target_distance} ft, Range: {spell_range} ft"
+    if spell_name in spell_aoe_info:
+        aoe = spell_aoe_info[spell_name]
+        spell_phrase += f" :boom: {aoe['size']} ft. {aoe['shape']} from {aoe['origin']} :boom:"
+    
+    # Cast the spell
+    command_list.append(f'{pref}i cast "{spell_name}" {target_string} -l {spell_level} -phrase "{spell_phrase}"')
+    command_list.append(f'{pref}i n')
+    
+    return True, debug_log
+
+def attempt_spell_cast_with_movement(monster, spell_name, spell_level, spell_range, target_distance, chosen_target, spell_aoe_info, teams, placed, indexed_combatant, overlays, desc, command_list, map_state, start_pos, target_pos, monster_speed, unoccupied, occupied, monster_size_mod, team_colors, width, height, monster_move_verb, location, out):
+    """Handle spell casting that requires movement"""
+    debug_log = f"[CAST-WITH-MOVE:{spell_name}:L{spell_level}:R{spell_range}:D{target_distance}]"
+    
+    can_move, move_distance, new_pos = can_move_into_spell_range(
+        start_pos, target_pos, spell_range, monster_speed, unoccupied, occupied, monster_size_mod, target_distance
+    )
+    
+    if not can_move:
+        return False, f"{debug_log}[MOVE-FAILED]"
+    
+    # Calculate movement and update position
+    new_location, arrow, new_pos = move_towards(start_pos, target_pos, move_distance, unoccupied, occupied)
+    new_distance = round(mapl.get_nearest(new_pos, monster_size_mod, target_pos, placed[chosen_target]['size_mod'])[0])
+    
+    if new_distance > spell_range:
+        return False, f"{debug_log}[STILL-OUT-OF-RANGE:{new_distance}>{spell_range}]"
+    
+    # Apply movement
+    mapl.update_position(monster, placed, new_pos, out)
+    
+    if arrow:
+        overlays.append(arrow)
+    else:
+        distance_moved = round(mapl.distance(start_pos, new_pos)) * 5
+        overlays.append(create_arrow_overlay(distance_moved, location, mapl.coords_to_loc(new_pos)))
+    
+    # Handle AoE after movement (similar to in-range logic but with movement description)
+    target_string = f"-t {chosen_target}"
+    movement_desc = f"moves and casts *{spell_name}* (Level {spell_level})"
+    
+    if spell_name in spell_aoe_info:
+        aoe_data = spell_aoe_info[spell_name]
+        if aoe_data["shape"] in ["Radius", "Sphere"]:
+            # AoE handling after movement
+            monster_team = mapl.get_combatant_team(indexed_combatant, teams)
+            overlay_color = team_colors.get(monster_team, "r")
+            team_positions, all_positions = get_team_positions(teams, placed, indexed_combatant)
+            
+            best_center, targets_in_aoe = find_optimal_circle_center(
+                aoe_data["origin"], aoe_data["size"], chosen_target, new_pos, 
+                monster_team, all_positions, width, height, spell_range
+            )
+            
+            circle_overlay = f"c{aoe_data['size']}{overlay_color}{best_center}"
+            overlays.append(f"*{circle_overlay}")
+            target_string = build_target_string(targets_in_aoe) if targets_in_aoe else f"-t {chosen_target}"
+            
+            if targets_in_aoe:
+                enemies = [t for t in targets_in_aoe if t["team"] != monster_team]
+                allies = [t for t in targets_in_aoe if t["team"] == monster_team]
+                enemy_names = ", ".join([t["name"] for t in enemies])
+                ally_names = ", ".join([t["name"] for t in allies])
+                hit_desc = f"{len(enemies)} enemies: {enemy_names}" + (f" + ⚠️{len(allies)} allies: {ally_names}" if allies else "")
+                movement_desc = f"targets {best_center} with *{spell_name}* (now {new_distance} ft. away, spell range {spell_range} ft.) - {aoe_data['size']} ft. radius hitting {hit_desc}"
+    
+    # Build final description
+    movement_verb = 'move' if monster_move_verb == 'walk' else '*fly*'
+    actual_distance = round(mapl.distance(start_pos, new_pos)) * 5
+    desc.append(f"{indexed_combatant} uses {actual_distance} ft. out of their {monster_speed} ft. to {movement_verb} towards {chosen_target} (now {new_distance} ft. away, spell range {spell_range} ft.), then {movement_desc}")
+    
+    # Display updated map
+    map_state["combatants"] = out
+    map_url = mapl.generate_map_image(overlays)
+    command_list.append(f'{pref}embed -title "Monster Movement & Spell: {monster.name}" -desc "{desc[-1]}" -image "{map_url}"')
+    
+    # Build spell phrase
+    spell_phrase = f":robot: _Auto Monster AI_ - Target: {new_distance} ft, Range: {spell_range} ft"
+    if spell_name in spell_aoe_info:
+        aoe = spell_aoe_info[spell_name]
+        spell_phrase += f" :boom: {aoe['size']} ft. {aoe['shape']} from {aoe['origin']} :boom:"
+    
+    # Cast the spell
+    command_list.append(f'{pref}i cast "{spell_name}" {target_string} -l {spell_level} -phrase "{spell_phrase}"')
+    command_list.append(f'{pref}i n')
+    
+    return True, f"{debug_log}[SUCCESS]"
+
+def process_spellcasting(monster, indexed_combatant, chosen_target, distance, teams, placed, overlays, desc, command_list, map_state, start_pos, target_pos, monster_speed, unoccupied, occupied, monster_size_mod, team_colors, width, height, monster_move_verb, location, out):
+    """Main spellcasting coordination function"""
+    spell_monst = monster.spellbook.caster_level
+    if not spell_monst:
+        return False
+    
+    # Load spell data and get spell list
+    spell_data = load_json(get_gvar("99f797c7-0c0e-4038-be4b-34f48cf4d26d"))
+    spell_list = [spell.name for spell in monster.spellbook.spells]
+    
+    if not spell_list:
+        return False
+    
+    # Pre-process spell data for O(1) lookups
+    spell_levels, spell_ranges, spell_aoe_info = preprocess_spell_data(spell_list, spell_data)
+    
+    # Get viable spells
+    viable_spells = get_viable_spells(monster, spell_levels)
+    if not viable_spells:
+        return False
+    
+    debug_log = f"[CASTER:L{spell_monst}][SPELLS:{len(spell_list)}][VIABLE:{len(viable_spells)}][TARGET-DIST:{distance}ft]"
+    
+    # Try each viable spell until one works
+    for spell_name, spell_level in viable_spells:
+        spell_range = spell_ranges.get(spell_name, 30)
+        debug_log += f"[TRY:{spell_name}:L{spell_level}:R{spell_range}]"
+        
+        # Check if already in range
+        if distance <= spell_range:
+            success, attempt_log = attempt_spell_cast_in_range(
+                monster, spell_name, spell_level, spell_range, distance, chosen_target,
+                spell_aoe_info, teams, placed, indexed_combatant, overlays, desc,
+                command_list, map_state, start_pos, team_colors, width, height
+            )
+            debug_log += attempt_log
+            if success:
+                ### Uncomment below line to enable 🔍 Spell Debug ###
+                # command_list.append(f'{pref}echo {debug_log}')
+                return True
+        else:
+            # Try moving into range
+            success, attempt_log = attempt_spell_cast_with_movement(
+                monster, spell_name, spell_level, spell_range, distance, chosen_target,
+                spell_aoe_info, teams, placed, indexed_combatant, overlays, desc,
+                command_list, map_state, start_pos, target_pos, monster_speed,
+                unoccupied, occupied, monster_size_mod, team_colors, width, height,
+                monster_move_verb, location, out
+            )
+            debug_log += attempt_log
+            if success:
+                ### Uncomment below line to enable 🔍 Spell Debug ###
+                # command_list.append(f'{pref}echo {debug_log}')
+                return True
+    
+    debug_log += "[FINAL:ALL-SPELLS-FAILED]"
+    ### Uncomment below line to enable 🔍 Spell Debug ###
+    # command_list.append(f'{pref}echo {debug_log}')
+    return False
+# Spellcasting GOD Functions
+
+
+def build_target_string(targets):
+    """Build -t target1 -t target2 string"""
+    return " ".join(f"-t {target['name']}" for target in targets)
+
+def create_aoe_overlay(shape_type, size, color, center, end_point=None):
+    """Extensible AoE overlay creation for future shapes"""
+    overlays = {
+        "circle": f"c{size}{color}{center}",
+        "cone": f"t{size}{color}{center}{end_point or ''}",
+        "line": f"l{size},5{color}{center}{end_point or ''}",
+        "square": f"s{size}{color}{center}"
+    }
+    return overlays.get(shape_type, f"c{size}{color}{center}")
+
+
+
 def process_monster_turn(indexed_combatant, out, overlays, desc, command_list, snippets=""):
     monster = c.get_combatant(indexed_combatant)
     if not monster:
@@ -667,81 +1217,23 @@ def process_monster_turn(indexed_combatant, out, overlays, desc, command_list, s
             # distance = mapl.get_nearest(start_pos, size_m, target_pos, target_size_mod)[0] * 5
             
             map_state["combatants"] = out
-            
-            # Spellcasting logic - FIXED VERSION - Ongoing, more improvements coming
-            spell_monst = monster.spellbook.caster_level
-            if spell_monst:
-                spell_data = load_json(get_gvar("a1e23cdf-0510-480d-a616-59e2c46780ac"))
-                spell_list = [spell.name for spell in monster.spellbook.spells]
 
-                # Create a list of viable spells
-                viable_spells = [
-                    (s, spell_data[s])
-                    for s in spell_list
-                    if s in spell_data and monster.spellbook.can_cast(s, spell_data[s])
-                ]
-                
-                # If there are viable spells, choose one randomly
-                chosen_spell, chosen_spell_level = None, 0
-                if viable_spells:
-                    chosen_spell, chosen_spell_level = randchoice(viable_spells)
 
-                if chosen_spell:
-                    spell_range = get_spell_range(chosen_spell)
-                    
-                    # Better ideal distance: stay at 80% of max range for safety
-                    ideal_distance = max(25, int(spell_range * 0.8))
-                    
-                    if abs(distance - ideal_distance) > 5:  # Only move if significantly off target
-                        move_distance = min(monster_speed, abs(distance - ideal_distance))
-                        
-                        if distance > ideal_distance:
-                            # Too far: move towards target
-                            new_location, arrow, new_pos = move_towards(start_pos, target_pos, move_distance, unoccupied)
-                            movement_direction = "towards"
-                        else:
-                            # Too close: calculate position away from target
-                            # Create a position in the opposite direction
-                            dx = start_pos[0] - target_pos[0]
-                            dy = start_pos[1] - target_pos[1]
-                            length = sqrt(dx*dx + dy*dy)
-                            
-                            if length > 0:
-                                # Normalize and scale to desired distance
-                                away_x = start_pos[0] + (dx / length) * (move_distance / 5)  # Convert to grid units
-                                away_y = start_pos[1] + (dy / length) * (move_distance / 5)
-                                away_pos = (max(0, min(width-1, round(away_x))), max(1, min(height, round(away_y))))
-                                new_location, arrow, new_pos = move_towards(start_pos, away_pos, move_distance, unoccupied)
-                            else:
-                                # If at same position, pick a random adjacent safe spot
-                                new_location, arrow, new_pos = move_towards(start_pos, start_pos, 0, unoccupied)
-                            movement_direction = "away from"
-                        
-                        # Only update if movement actually occurred
-                        if new_pos != start_pos:
-                            mapl.update_position(monster, placed, new_pos, out)
-                            if arrow:
-                                overlays.append(arrow)
-                            else:
-                                # Create manual arrow if move_towards didn't generate one
-                                distance_moved = round(mapl.distance(start_pos, new_pos)) * 5
-                                overlays.append(create_arrow_overlay(distance_moved, location, mapl.coords_to_loc(new_pos)))
-                                
-                            desc.append(f"{indexed_combatant} uses {int(move_distance)} ft. out of their {monster_speed} ft. to {'move' if monster_move_verb == 'walk' else '*fly*'} {movement_direction} {chosen_target} for optimal spell range.")
-                            
-                            # Display updated map
-                            map_state["combatants"] = out
-                            map_url = mapl.generate_map_image(overlays)
-                            command_list.append(f'{pref}embed -title "Monster Movement: {monster.name}" -desc "{desc[-1]}" -image "{map_url}"')
-                        else:
-                            desc.append(f"{indexed_combatant} holds position, already at optimal spell range.")
-                    else:
-                        desc.append(f"{indexed_combatant} holds position, already at ideal vantage point.")
-                    
-                    # Cast the spell
-                    command_list.append(f'{pref}i cast "{chosen_spell}" -t {chosen_target} -l {chosen_spell_level} -phrase ":robot: _Triggered by auto monster AI_"')
-                    command_list.append(f'{pref}i n')
-                    return
+            # Spellcasting GOD Func call - Attempt to cast spells if available
+            spell_cast_successful = process_spellcasting(
+                monster, indexed_combatant, chosen_target, distance, teams, placed, 
+                overlays, desc, command_list, map_state, start_pos, target_pos, 
+                monster_speed, unoccupied, occupied, size_m, team_colors, 
+                width, height, monster_move_verb, location, out
+            )
+
+            # If we successfully cast a spell, return early
+            if spell_cast_successful:
+                return
+
+            # **EXECUTION FALLS THROUGH TO EXISTING MELEE CODE BLOCK**
+            # If no spells worked, the code naturally continues to the melee logic below...
+
 
             # Melee combat logic (if not a spellcaster or out of spell slots)
             if max_attack_reach < distance:
