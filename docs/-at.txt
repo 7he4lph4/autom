@@ -1,0 +1,22 @@
+Usage: `-at type:range`
+
+Use `-at` to auto-move and auto-target based on attack range and type.
+Works only if you're on a map in combat.
+
+**Examples**
+- 5 ft melee attack: `-at m` | `-at 5`
+- 10 ft melee attack: `-at m:10` | `-at 10`
+
+- Infinite ranged attack: `-at` | `-at r`
+- 20/60 ft ranged attack: `-at 20/60` | `-at r:20/60`
+- 120 ft ranged attack: `-at r:120` | `-at 120/120`
+
+Ranged Attacks roll with disadvantage if target is within 5 feet or in long range.
+
+Multiple range types can be included with `|`.
+For example, `!a dagger -at m|r:20/60` will:
+1. Attempt to make a melee attack to a target within movement and attack range.
+2. If there are no melee targets, attempt to make a 20/60 ranged attack.
+3. If the first range type is `m`, the attacker moves closer to melee range.
+
+Movement and attack range will use your server's trueDistance setting.
