@@ -15,12 +15,14 @@ using(
     mobl="65c27eae-11c3-4b5c-90e5-472bc49f0037",
 )
 
+
 def get_combatant_team(combatant_name, teams):
     """Get the team number for a given combatant"""
     for team_num, team_members in teams.items():
         if combatant_name in team_members:
             return team_num
     return 1  # Default fallback
+
 
 def mapPresent():
     map_combatant = None
@@ -32,11 +34,7 @@ def mapPresent():
 
 
 def parse_map_info(info):
-    return {
-        f[0].lower(): f[1]
-        for f in [i.split(": ") for i in [r for r in info.split(" ~ ")]]
-        if len(f) == 2
-    }
+    return {f[0].lower(): f[1] for f in [i.split(": ") for i in [r for r in info.split(" ~ ")]] if len(f) == 2}
 
 
 def parse_mapsize(size_str):
@@ -59,11 +57,7 @@ def get_map_info():
 def parse_note(note):
     if not note:
         return {}
-    return {
-        item.split(":")[0].lower().strip(): item.split(":")[1].strip()
-        for item in note.split("|")
-        if ":" in item
-    }
+    return {item.split(":")[0].lower().strip(): item.split(":")[1].strip() for item in note.split("|") if ":" in item}
 
 
 def update_combatant_note(combatant, map_state, **kwargs):
@@ -72,9 +66,7 @@ def update_combatant_note(combatant, map_state, **kwargs):
     new_note = " | ".join(f"{k.title()}: {v.strip()}" for k, v in note.items())
     combatant.set_note(new_note)
     map_state["combatants"] = map_state.get("combatants", {})
-    map_state["combatants"][combatant.name] = map_state["combatants"].get(
-        combatant.name, {}
-    )
+    map_state["combatants"][combatant.name] = map_state["combatants"].get(combatant.name, {})
     for k, v in kwargs.items():
         map_state["combatants"][combatant.name][k] = v
 
@@ -82,7 +74,9 @@ def update_combatant_note(combatant, map_state, **kwargs):
 def attach_map_to_combatant(map_state):
     map_info, map_combatant = get_map_info()
     if not map_combatant:
-        missing_map_warning = f"Map init object missing!\n\nPlease add a map object to combat using:\n`{pref}i add 0 DM -p 20`"
+        missing_map_warning = (
+            f"Map init object missing!\n\nPlease add a map object to combat using:\n`{pref}i add 0 DM -p 20`"
+        )
         return False, missing_map_warning
 
     # Update map_info with new state
@@ -212,9 +206,7 @@ def update_adjacent(data, placed):
     for pname, pc in placed.items():
         pcx, pcy = subtract_coords(pc["pos"], size_offset)
         pc_size = size_offset[0] + pc["size_mod"] + 1
-        if (x in range(pcx, pcx + pc_size + 1)) and (
-            y in range(pcy, pcy + pc_size + 1)
-        ):
+        if (x in range(pcx, pcx + pc_size + 1)) and (y in range(pcy, pcy + pc_size + 1)):
             data["adjacent"].append(pname)
             pc["adjacent"].append(data["combatant"].name)
 
@@ -287,9 +279,7 @@ def place_combatants(placed, unplaced, width, height, out, map_state, teams=None
         (size_groups[size[0]] if size[0] in "GHL" else size_groups["M"]).append(upc)
 
     player_side = 0
-    players_x = [
-        p["pos"][0] for p in placed.values() if not autolib.isMonster(p.combatant)
-    ]
+    players_x = [p["pos"][0] for p in placed.values() if not autolib.isMonster(p.combatant)]
     if 0 < len(players_x):
         player_side = round((sum(players_x) / len(players_x)) / (width - 1))
 
@@ -327,9 +317,7 @@ def place_combatants(placed, unplaced, width, height, out, map_state, teams=None
                 "pos": (x, y),
                 "size_mod": size_mod,
             }
-            combatant.set_note(
-                f"Location: {location} | Color: {color} | Size: {sg} ({size_dict[sg]})"
-            )
+            combatant.set_note(f"Location: {location} | Color: {color} | Size: {sg} ({size_dict[sg]})")
 
             update_occupied(occupied_grid, size_mod, placed[upc], width, height)
             out[upc] = placed[upc]
@@ -412,9 +400,7 @@ def get_placed_distances(name, target_names, placed):
     for pc, data in placed.items():
         if pc != name and pc in target_names and "pos" in data:
             nearest = get_nearest(pos, size, data.pos, data.size_mod)
-            distances[nearest[0]] = distances.get(nearest[0], []) + [
-                (pc, nearest[1], nearest[2])
-            ]
+            distances[nearest[0]] = distances.get(nearest[0], []) + [(pc, nearest[1], nearest[2])]
     dkeys = list(distances.keys())
     dkeys.sort()
     return {k: distances[k] for k in dkeys}
@@ -431,9 +417,7 @@ def get_move_coords(name, placed, width, height):
         occupied.update(occupied_box(size, pc.pos, pc.size_mod))
         unoccupied.update(melee_box(size, pc.pos, pc.size_mod))
     unoccupied -= occupied
-    unoccupied = [
-        p for p in unoccupied if (0 <= p[0] < rbound) and (1 <= p[1] <= bbound)
-    ]
+    unoccupied = [p for p in unoccupied if (0 <= p[0] < rbound) and (1 <= p[1] <= bbound)]
     return unoccupied, occupied
 
 
@@ -566,22 +550,12 @@ def circle(center, radius, offset=0, bounds=[0, 1, 20, 21]):
 
 # Raycasting Algorithm
 def points_in_shape(shape, points):
-    return [
-        p
-        for p in points
-        if (p in shape)
-        or len([s for s in shape if (p[1] == s[1] and p[0] < s[0])]) % 2 != 0
-    ]
+    return [p for p in points if (p in shape) or len([s for s in shape if (p[1] == s[1] and p[0] < s[0])]) % 2 != 0]
 
 
 def points_outside_shape(shape, points):
     return [
-        p
-        for p in points
-        if not (
-            (p in shape)
-            or len([s for s in shape if (p[1] == s[1] and s[0] < p[0])]) % 2 != 0
-        )
+        p for p in points if not ((p in shape) or len([s for s in shape if (p[1] == s[1] and s[0] < p[0])]) % 2 != 0)
     ]
 
 

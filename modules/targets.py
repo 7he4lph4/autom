@@ -32,9 +32,7 @@ notes = {
 
 # Process arguments for -at targeting snippet
 def parse_target_args(args):
-    processed_args = (
-        argparse(args).last("at", default="", ephem=True).lower().replace("true", "")
-    )
+    processed_args = argparse(args).last("at", default="", ephem=True).lower().replace("true", "")
     valid_args = ["m", "r", "dash"]
 
     targ_args = {}
@@ -76,9 +74,7 @@ def get_target_lists(targs={}):
     master_list = [
         co
         for co in c.combatants
-        if co
-        and co.name.lower() not in ["dm", "map", "lair"]
-        and (targs.get("dead", False) or 0 < co.hp)
+        if co and co.name.lower() not in ["dm", "map", "lair"] and (targs.get("dead", False) or 0 < co.hp)
     ]
     if targs.get("order", "_") in "hl":
         sort_health(
@@ -250,9 +246,7 @@ def get_farthest_spaces(spaces, location):
 def filter_true_distance(move_attack_box, location, movement):
     filtered_box = {}
     for x, y_range in move_attack_box.items():
-        filtered_y = [
-            y for y in y_range if distance(location, (x, y)) <= round(movement) // 5
-        ]
+        filtered_y = [y for y in y_range if distance(location, (x, y)) <= round(movement) // 5]
         if filtered_y:
             filtered_box[x] = filtered_y
     return filtered_box
@@ -273,11 +267,7 @@ def loc_to_cell(location):
 def parse_note(note):
     if not note:
         return {}
-    return {
-        item.split(":")[0].lower().strip(): item.split(":")[1].strip()
-        for item in note.split("|")
-        if ":" in item
-    }
+    return {item.split(":")[0].lower().strip(): item.split(":")[1].strip() for item in note.split("|") if ":" in item}
 
 
 def update_combatant_note(combatant, **kwargs):

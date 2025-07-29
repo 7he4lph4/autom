@@ -4,8 +4,7 @@ pref, al = ctx.prefix, ctx.alias
 cmd = pref+al
 null, nl, comma = '', '\n', ','
 args = argparse(&ARGS&)
-
-cname_list, command_list, combatant_mismatch = [],[],[]
+cname_list, commands, combatant_mismatch = [],[],[]
 multiattack, spell_viable, counter = False, False, 0
 
 team_colors = {1: "b", 2: "r", 3: "y", 4: "g", 5: "o", 6: "p"}
@@ -18,9 +17,7 @@ inp3 = "&3&"
 
 c = combat()
 
-using(
-    helpl = "2020ae6c-6c1f-4044-a1a7-45137357ff6d", # importing only this early since targl accesses combat variables and combat() is null in below if block and errors out
-)
+using(helpl = "2020ae6c-6c1f-4044-a1a7-45137357ff6d")
 
 # Simple advanced help implementation without pagination
 if inp == 'advanced':
@@ -28,10 +25,10 @@ if inp == 'advanced':
     desc = helpl.advanced_help_text
     return f'embed -title "{title}" -desc "{desc}" -color {color}'
 
-if not c or inp == 'help' or inp == '?':
-    title = helpl.help_title
-    desc = helpl.help_text
-    return f'embed -title "{title}" -desc "{desc}"'
+if not c or inp in ['help', '?']:
+    return f'embed -title "{helpl.help_title}" -desc "{helpl.help_text}"'
+
+footer = f'{cmd} help | made by @alpha983'
 
 using(
     # autolib = "ec14bc6e-81e4-4df7-86e9-5d64ed2fa9b7",
@@ -53,24 +50,20 @@ using(
     mobl = "56f70775-86f6-46c5-ae74-acb839bbee74",
 
     #targl = "f8369cc0-8ab0-42a5-8dfd-4ab7f34c0e61",
-    # targl test
-    targl = "0e93fa5a-ba10-4981-9efb-11f7e114101a"
+    # Test Versions for targl:
+    # targl = "0e93fa5a-ba10-4981-9efb-11f7e114101a" # Old
+    targl = "cb0a8fe6-0eb1-4cc1-a868-f0b4d19cda92" # Latest
 )
 
-command = f"""multiline{nl}"""
-footer = f'{cmd} help | made by @alpha983'
-
 if inp1.lower() in ['m', 'map'] and inp2.lower() == 'list':
-    return command + nl.join(presets.generate_list_embeds(footer))
-
-
-title = helpl.help_title
-desc_text = helpl.help_text
+    return f'\n{pref}'.join(["multiline"] + presets.generate_list_embeds(footer))
 
 if inp1.lower() == 'lair':
-    command_list.append(f'{pref}i add 0 Lair -p 20')
-    command_list.append(f'''{pref}embed -title "A Lair Object has been added!" -desc "A Lair object was added at Initiative 20 to run monsters' Lair Actions." -color <color>''')
-    return command + nl.join(command_list)
+    return f'\n{pref}'.join([
+        'multiline',
+        'i add 0 Lair -p 20',
+        'embed -title "A Lair Object has been added!" -desc "A Lair object was added at Initiative 20 to run the Lair Actions of monsters." -color <color>'
+    ])
 
 
 # INITIALIZING COMBAT AND MAP
@@ -89,6 +82,7 @@ alph = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 size_map = {'T': 1, 'S': 1, 'M': 1, 'L': 2, 'H': 3, 'G': 4}
 map_base_url = get("otfbm_base_url", "http://otfbm.io/")
 mapsize = get("mapSize", "20x20")
+true_distance = get_svar("trueDistance", True)
 
 map_combatant = mapl.mapPresent()
 map_info, map_attach = mapl.get_map_info()
@@ -105,10 +99,8 @@ if not map_attach:
         return f'embed -title "Map Setup Pending:" -desc "{desc}" -color <color>'
     
     map_attach.add_effect("map", attacks=[{"attack": {"name":"map", "automation": [{"type":"text", "text":""}], "_v":2,}}])
-    
-    desc = helpl.no_map
-    command_list.append(f'{pref}embed -title "Map Settings attached to {map_attach.name}!" -desc "{desc}" -color <color>')
-    # return f'embed -title "Map Settings attached to {map_attach.name}!" -desc "{desc}" -color <color>'
+    commands.append(f'embed -title "Map Settings attached to {map_attach.name}!" -desc "{helpl.no_map}" -color <color>')
+
 map_state = {
     "current_map": None, 
     "size": map_info.get("size", [20, 20]),
@@ -117,21 +109,8 @@ map_state = {
 }
 width, height = mapl.parse_mapsize(map_state.get("size"))
 
-teams = {}
-for co in c.combatants:
-    if co.name.lower() in ["dm", "map", "lair"] or autolib.isGhost(c, co):
-        continue
-    for effect in co.effects:
-        if effect.name.startswith("Ally (auto)"):
-            teams[1] = teams.get(1, []) + [co.name]
-            break
-        if all(e in effect.name for e in ["Team", "(auto)"]):
-            team = int("".join([e for e in effect.name if e.isdigit()]))
-            teams[team] = teams.get(team, []) + [co.name]
-            break
-    else:
-        team = 1 if not autolib.isMonster(co) else max(max(teams, default=2),2)
-        teams[team] = teams.get(team, []) + [co.name]
+# Get teams and current team
+teams = targl.get_teams()
 
 placed, unplaced = mapl.get_placed_combatants(teams, team_colors)
 map_state["combatants"] = placed
@@ -157,14 +136,14 @@ if (inp1.lower() in ['m', 'map']) or not map_info:
     if unplaced:
         mapl.place_combatants(placed, unplaced, width, height, out, map_state, teams, team_colors)
     map_url = mapl.generate_map_image(map_info=map_info)
-    command_list.append(f'{pref}embed {message} -image "{map_url}"')
+    commands.append(f'embed {message} -image "{map_url}"')
     new_combat = True
 
 # Place any unplaced combatants on the map
 if unplaced:
     mapl.place_combatants(placed, unplaced, width, height, out, map_state, teams, team_colors)
     map_url = mapl.generate_map_image(map_state=map_state)
-    command_list.append(f'{pref}embed -title "Map Setup Complete!" -desc "All combatants have been placed on the map." -image "{map_url}"')
+    commands.append(f'embed -title "Map Setup Complete!" -desc "All combatants have been placed on the map." -image "{map_url}"')
     new_combat = True
     
 if not party_names:
@@ -180,85 +159,59 @@ if targl.dead_monsters:
     for dead_monster in targl.dead_monsters:
         dead_monster_names.append(dead_monster.name)
         mapl.update_combatant_note(dead_monster, map_state, color="gy")
-        dead_monster.set_group("Dead monsters")
+        dead_monster.set_group("Dead monsters")   
     map_url = mapl.generate_map_image(overlays, map_state=map_state)
-    command_list.append(
-        pref + core.make_embed(
-            title="Removing Dead Monsters", 
-            desc="**The following dead monsters were found:**\n" + ", ".join(dead_monster_names)
-        ) + f" -image {map_url}"
-    )
-    command_list.append(
-        f"{pref}i n" if c.current and c.current.name in dead_monster_names else f'{pref}i remove "Dead monsters"'
-    )
+
+    title = "Removing Dead Monsters"
+    desc_text = f"The following dead monsters were found:\n{', '.join(dead_monster_names)}"
+    commands.append(f'embed -title "{title}" -desc "{desc_text}" -image "{map_url}"')
+    commands.append('i n' if c.current and c.current.name in dead_monster_names else 'i remove "Dead monsters"')
+
     if not targl.monsters:
-        command_list.append(
-            pref + core.make_embed(
-                title="No monsters found in initiative!",
-                desc=f'All monsters have been defeated!\n\nFeel free to add more at any time and run `{cmd}` to place them on the map.'
-            )
-        )
-        return command + nl.join(command_list)
+        title = "No monsters found in initiative!"
+        desc = f'All monsters have been defeated!\n\nFeel free to add more at any time and run `{cmd}` to place them on the map.'
+        commands.append(f'embed -title "{title}" -desc "{desc_text}"')
+        if 1 < len(commands):
+            commands.insert(0, "multiline")
+        return f'\n{pref}'.join(commands)
     new_combat = True
 
 # Check if there are any monsters in initiative
 if not targl.monsters:
-    command_list.append(
-        pref + core.make_embed(
-            title="No monsters found in initiative!",
-            desc=f'That\'s fine, feel free to add them any time and run `{cmd}` every time it\'s the monster\'s turn!'
-        )
-    )
-    return command + nl.join(command_list)
+    title = "No Monsters in Initiative!"
+    desc_text = f'That\'s fine, feel free to add them at any time and run `{cmd}` whenever it\'s the monster\'s turn!'
+    commands.append(f'embed -title "{title}" -desc "{desc_text}"')
+    if 1 < len(commands):
+        commands.insert(0, "multiline")
+    return f'\n{pref}'.join(commands)
 
 # Check if it's the first round of combat
-current_init = combatants[0].name if not c.current else c.current.name
-if c.current is None:
-    command_list.append(f'{pref}i n')
-
-# Check if it's a lair action turn
-if current_init.casefold() in ['map', 'dm', 'lair']:
-    title = f'Waiting on Lair Action :dragon:'
-    desc_text = f'Use `{pref}i n` if there are no actions to take this round!'
-    command_list.append(f'{pref}embed -title "{title}" -desc "{desc_text}"')
-    return command + nl.join(command_list)
-
-current_combatant = c.get_combatant(current_init)
-
-# It's a group's turn
-if not current_combatant:
-    current_combatant = c.get_group(current_init)
-    if current_combatant:
-        title = f'It\'s a group\'s turn! :dragon:'
-        desc_text = f"Waiting on **{current_init}** to play their turn!"
-        command_list.append(f'{pref}embed -title "{title}" -desc "{desc_text}"')
-        return command + nl.join(command_list)
-
-# It's a player's turn
-if not current_combatant.monster_name:
-    title = f'It\'s a player turn! :mage:'
-    desc_text = f"Waiting on **{current_init}** to play their turn!"
-    if not get_uvar('mapStates'):
-        desc_text += helpl.move_help
-    command_list.append(f'{pref}embed -title "{title}" -desc "{desc_text}"')
-    return command + nl.join(command_list)
-
-# Current combatant has the "Stop Automation" effect
-if current_combatant.monster_name and current_combatant.get_effect("Stop Automation (auto)"):
-    title = f'Stopping automation for {current_combatant.name}'
-    desc_text = f"Automation has been stopped for **{current_combatant.name}**'s turn! Use `{pref}i n` to continue automation!"
-    command_list.append(f'{pref}embed -title "{title}" -desc "{desc_text}"')
-    return command + nl.join(command_list)
+if not c.current: commands.append('i n')
 
 # New combat current combatant is a monster
 if new_combat:
     title = f'Ready to automate monsters! :robot:'
     desc_text = f'''**Use `{cmd}` again to automate the following monsters:**\n{", ".join([m for m in monster_names if m not in dead_monster_names])}'''
-    command_list.append(f'{pref}embed -title "{title}" -desc "{desc_text}"')
-    return command + nl.join(command_list)
-  
-    
-# MAP INITIALIZATION COMPLETE
+    commands.append(f'embed -title "{title}" -desc "{desc_text}"')
+    if 1 < len(commands):
+        commands.insert(0, "multiline")
+    return f'\n{pref}'.join(commands)
+
+# PREPARE COMBATANT TURN DATA
+
+max_combatants = 4 if (inp1.lower() not in ["o", "once", "react", "reaction"]) else 1
+
+current_co_name = combatants[0].name if not c.current else c.current.name
+current_co_team, current_team_enemies = targl.get_my_team(teams, current_co_name)
+current_team_names = teams.get(current_co_team, [])
+
+targets, party, monsters = targl.get_target_lists()
+enemies = [e for e in current_team_enemies if e in [t.name for t in targets]]
+
+all_co_names = [c.name for c in combatants]
+
+
+# INITIALIZATION COMPLETE
 
 def find_best_aoe_position(monster, aoe_attack, target_names):
     best_position = None
@@ -460,7 +413,7 @@ def move_towards(start_pos, end_pos, distance, unoccupied, occupied=[]):
     
     # if move_pos in occupied:
     #     return mapl.coords_to_loc(start_pos), None, start_pos
-    # command_list.append(f'{pref}echo {move_pos}')
+    # commands.append(f'echo {move_pos}')
     # goto = list(unoccupied)
     # goto.sort(key=lambda p: mapl.distance(move_pos, p))
     
@@ -880,7 +833,7 @@ def can_move_into_spell_range(current_pos, target_pos, spell_range, monster_spee
     
     return False, 0, current_pos
 
-def attempt_spell_cast_in_range(monster, spell_name, spell_level, spell_range, target_distance, chosen_target, spell_aoe_info, teams, placed, indexed_combatant, overlays, desc, command_list, map_state, monster_pos, team_colors, width, height):
+def attempt_spell_cast_in_range(monster, spell_name, spell_level, spell_range, target_distance, chosen_target, spell_aoe_info, teams, placed, indexed_combatant, overlays, desc, turn_commands, map_state, monster_pos, team_colors, width, height):
     """Handle spell casting when already in range"""
     debug_log = f"[CAST-IN-RANGE:{spell_name}:L{spell_level}:R{spell_range}:D{target_distance}]"
     
@@ -925,7 +878,7 @@ def attempt_spell_cast_in_range(monster, spell_name, spell_level, spell_range, t
             # Display map with overlay
             map_state["combatants"] = map_state.get("combatants", {})
             map_url = mapl.generate_map_image(overlays)
-            command_list.append(f'{pref}embed -title "{monster.name} casts an AoE Spell - {spell_name} on the map!" -desc "{desc[-1]}" -image "{map_url}"')
+            turn_commands.append(f'embed -title "{monster.name} casts an AoE Spell - {spell_name} on the map!" -desc "{desc[-1]}" -image "{map_url}"')
         else:
             # Non-circle AoE fallback
             desc.append(f"{indexed_combatant} casts *{spell_name}*")
@@ -940,12 +893,12 @@ def attempt_spell_cast_in_range(monster, spell_name, spell_level, spell_range, t
         spell_phrase += f" :boom: {aoe['size']} ft. {aoe['shape']} from {aoe['origin']} :boom:"
     
     # Cast the spell
-    command_list.append(f'{pref}i cast "{spell_name}" {target_string} -l {spell_level} -phrase "{spell_phrase}"')
-    command_list.append(f'{pref}i n')
+    turn_commands.append(f'i cast "{spell_name}" {target_string} -l {spell_level} -phrase "{spell_phrase}"')
+    turn_commands.append('i n')
     
     return True, debug_log
 
-def attempt_spell_cast_with_movement(monster, spell_name, spell_level, spell_range, target_distance, chosen_target, spell_aoe_info, teams, placed, indexed_combatant, overlays, desc, command_list, map_state, start_pos, target_pos, monster_speed, unoccupied, occupied, monster_size_mod, team_colors, width, height, monster_move_verb, location, out):
+def attempt_spell_cast_with_movement(monster, spell_name, spell_level, spell_range, target_distance, chosen_target, spell_aoe_info, teams, placed, indexed_combatant, overlays, desc, turn_commands, map_state, start_pos, target_pos, monster_speed, unoccupied, occupied, monster_size_mod, team_colors, width, height, monster_move_verb, location, out):
     """Handle spell casting that requires movement"""
     debug_log = f"[CAST-WITH-MOVE:{spell_name}:L{spell_level}:R{spell_range}:D{target_distance}]"
     
@@ -1009,7 +962,7 @@ def attempt_spell_cast_with_movement(monster, spell_name, spell_level, spell_ran
     # Display updated map
     map_state["combatants"] = out
     map_url = mapl.generate_map_image(overlays)
-    command_list.append(f'{pref}embed -title "Monster Movement & Spell: {monster.name}" -desc "{desc[-1]}" -image "{map_url}"')
+    turn_commands.append(f'embed -title "Monster Movement & Spell: {monster.name}" -desc "{desc[-1]}" -image "{map_url}"')
     
     # Build spell phrase
     spell_phrase = f":robot: _Auto Monster AI_ - Target: {new_distance} ft, Range: {spell_range} ft"
@@ -1018,12 +971,12 @@ def attempt_spell_cast_with_movement(monster, spell_name, spell_level, spell_ran
         spell_phrase += f" :boom: {aoe['size']} ft. {aoe['shape']} from {aoe['origin']} :boom:"
     
     # Cast the spell
-    command_list.append(f'{pref}i cast "{spell_name}" {target_string} -l {spell_level} -phrase "{spell_phrase}"')
-    command_list.append(f'{pref}i n')
+    turn_commands.append(f'i cast "{spell_name}" {target_string} -l {spell_level} -phrase "{spell_phrase}"')
+    turn_commands.append(f'i n')
     
     return True, f"{debug_log}[SUCCESS]"
 
-def process_spellcasting(monster, indexed_combatant, chosen_target, distance, teams, placed, overlays, desc, command_list, map_state, start_pos, target_pos, monster_speed, unoccupied, occupied, monster_size_mod, team_colors, width, height, monster_move_verb, location, out):
+def process_spellcasting(monster, indexed_combatant, chosen_target, distance, teams, placed, overlays, desc, turn_commands, map_state, start_pos, target_pos, monster_speed, unoccupied, occupied, monster_size_mod, team_colors, width, height, monster_move_verb, location, out):
     """Main spellcasting coordination function"""
     spell_monst = monster.spellbook.caster_level
     if not spell_monst:
@@ -1056,31 +1009,31 @@ def process_spellcasting(monster, indexed_combatant, chosen_target, distance, te
             success, attempt_log = attempt_spell_cast_in_range(
                 monster, spell_name, spell_level, spell_range, distance, chosen_target,
                 spell_aoe_info, teams, placed, indexed_combatant, overlays, desc,
-                command_list, map_state, start_pos, team_colors, width, height
+                turn_commands, map_state, start_pos, team_colors, width, height
             )
             debug_log += attempt_log
             if success:
                 ### Uncomment below line to enable 🔍 Spell Debug ###
-                # command_list.append(f'{pref}echo {debug_log}')
+                # turn_commands.append(f'echo {debug_log}')
                 return True
         else:
             # Try moving into range
             success, attempt_log = attempt_spell_cast_with_movement(
                 monster, spell_name, spell_level, spell_range, distance, chosen_target,
                 spell_aoe_info, teams, placed, indexed_combatant, overlays, desc,
-                command_list, map_state, start_pos, target_pos, monster_speed,
+                turn_commands, map_state, start_pos, target_pos, monster_speed,
                 unoccupied, occupied, monster_size_mod, team_colors, width, height,
                 monster_move_verb, location, out
             )
             debug_log += attempt_log
             if success:
                 ### Uncomment below line to enable 🔍 Spell Debug ###
-                # command_list.append(f'{pref}echo {debug_log}')
+                # turn_commands.append(f'echo {debug_log}')
                 return True
     
     debug_log += "[FINAL:ALL-SPELLS-FAILED]"
     ### Uncomment below line to enable 🔍 Spell Debug ###
-    # command_list.append(f'{pref}echo {debug_log}')
+    # turn_commands.append(f'echo {debug_log}')
     return False
 # Spellcasting GOD Functions
 
@@ -1099,30 +1052,16 @@ def create_aoe_overlay(shape_type, size, color, center, end_point=None):
     }
     return overlays.get(shape_type, f"c{size}{color}{center}")
 
-
-
-def process_monster_turn(indexed_combatant, out, overlays, desc, command_list, snippets=""):
+def process_monster_turn(indexed_combatant, out, overlays, desc, snippets=""):
+    
+    # Assume indexed_combatant is valid due to prior checks
     monster = c.get_combatant(indexed_combatant)
-    if not monster:
-        desc.append(f"Could not find combatant: {indexed_combatant}")
-        return
-    
     monster_name = monster.monster_name
-    curr_hp = monster.hp
     
-    # Check if the monster is already dead at the start of its turn
-    if monster.hp <= 0:
-        remove_dead_monster(c, monster, out, desc)
-        map_url = mapl.generate_map_image(overlays)
-        command_list.append(f'{pref}embed -title "Skipping dead monster: {monster.name}" -desc "{monster.name} has been defeated and removed from the map. Its turn will be skipped." -image "{map_url}"')
-        command_list.append(f'{pref}i n')  # Skip to next turn
-        return
+    turn_commands = []
+    phrase = ":robot: _Triggered by auto monster AI_"
 
-    # Get location from note
-    map_data = placed[indexed_combatant]
-    location = map_data["location"]
-    
-    phrase = ""
+    # Teams
     team = 1
     for t in teams:
         if indexed_combatant in teams[t]:
@@ -1130,23 +1069,40 @@ def process_monster_turn(indexed_combatant, out, overlays, desc, command_list, s
             break
     targets = [co for t in teams if t != team for co in teams[t]]
     
+    chosen_target = randchoice(targets) 
+
+    # Get location from note
+    co_map_data = placed.get(indexed_combatant, {})
+    location = co_map_data["location"]
+
+    chosen_target = randchoice(targets)
+    distance = 5
+    
+    all_combatants = [c.name for c in c.combatants if c.name.lower() not in ['map', 'dm', 'lair']]
+
     # Check if map is present
     if map_attach and location:
+        target_distances = mapl.get_placed_distances(indexed_combatant, targets, placed)
+        closest = min(target_distances)
+
+        movement, move_mode = targl.get_co_movement(monster)
+        # move_delta = 0
+        # move_spaces = targl.get_valid_movement(placed, indexed_combatant, temp_co_map_data, movement, [width, height])
+
         monster_speed, monster_move_verb = mobl.get_monster_speed(monster_name)
 
-        start_pos, size_m = map_data["pos"], map_data["size_mod"]
+        start_pos, size_m = co_map_data["pos"], co_map_data["size_mod"]
         
         # Get occupied positions to avoid collisions
         unoccupied, occupied = mapl.get_move_coords(monster.name, placed, width, height)
+
+        # Create a list of all potential targets (excluding the monster itself)
+        potential_targets = [name for name in all_combatants if name != monster.name]
 
         ### AoE ###
         aoe_attacks = mobl.get_aoe_attacks(monster.name)
         if aoe_attacks:
             aoe_attack = randchoice(aoe_attacks)
-
-            # Create a list of all potential targets (excluding the monster itself)
-            all_combatants = [c.name for c in c.combatants if c.name.lower() not in ['map', 'dm', 'lair']]
-            potential_targets = [name for name in all_combatants if name != monster.name]
 
             # Find the best position for the AoE attack
             best_position = find_best_aoe_position(monster, aoe_attack, potential_targets)
@@ -1169,7 +1125,7 @@ def process_monster_turn(indexed_combatant, out, overlays, desc, command_list, s
                     # Display the updated map after movement
                     map_state["combatants"] = out
                     map_url = mapl.generate_map_image(overlays)
-                    command_list.append(f'{pref}embed -title "Monster Movement: {monster.name}" -desc "{desc[-1]}" -image "{map_url}"')
+                    turn_commands.append(f'embed -title "Monster Movement: {monster.name}" -desc "{desc[-1]}" -image "{map_url}"')
 
                 # Adjust the AoE position for cone and line attacks
                 if aoe_attack['shape'] in ['cone', 'line']:
@@ -1183,7 +1139,7 @@ def process_monster_turn(indexed_combatant, out, overlays, desc, command_list, s
 
                     # Display the map with the AoE overlay
                     map_url = mapl.generate_map_image(overlays)
-                    command_list.append(f'{pref}embed -title "AoE Attack: {monster.name}" -desc "{desc[-1]}" -image "{map_url}"')
+                    turn_commands.append(f'embed -title "AoE Attack: {monster.name}" -desc "{desc[-1]}" -image "{map_url}"')
 
                     # Find targets within the AoE
                     affected_targets = get_targets_in_aoe(location, aoe_attack, potential_targets)
@@ -1191,22 +1147,21 @@ def process_monster_turn(indexed_combatant, out, overlays, desc, command_list, s
                     # Add the attack command targeting all affected combatants
                     if affected_targets:
                         target_string = " -t ".join(affected_targets)
-                        command_list.append(f'{ctx.prefix}i a "{aoe_attack["name"]}" -t {target_string} -phrase ":robot: _Triggered by auto monster AI_"')
+                        turn_commands.append(f'i a "{aoe_attack["name"]}" -t {target_string} -phrase "{phrase}"')
                     else:
                         desc.append(f"No targets were caught in the AoE of {aoe_attack['name']}.")
 
-                    command_list.append(f'{ctx.prefix}i n')
-                    return
+                    turn_commands.append('i n')
+                    return turn_commands
         ### AoE ###
 
-        placed_distances = mapl.get_placed_distances(monster.name, targets, placed)
-        chosen_target, distance, melee = find_best_target(monster, targets, unoccupied, placed_distances)
+        chosen_target, distance, melee = find_best_target(monster, targets, unoccupied, target_distances)
         
-        #return command_list.append(f"!echo {chosen_target}")
+        #return turn_commands.append(f"echo {chosen_target}")
         target_combatant = c.get_combatant(chosen_target)
         if not target_combatant:
             desc.append(f"Could not find target: {chosen_target}")
-            return
+            return turn_commands
 
         target_location = placed[chosen_target].get('location', None)
         if target_location:
@@ -1222,14 +1177,14 @@ def process_monster_turn(indexed_combatant, out, overlays, desc, command_list, s
             # Spellcasting GOD Func call - Attempt to cast spells if available
             spell_cast_successful = process_spellcasting(
                 monster, indexed_combatant, chosen_target, distance, teams, placed, 
-                overlays, desc, command_list, map_state, start_pos, target_pos, 
+                overlays, desc, turn_commands, map_state, start_pos, target_pos, 
                 monster_speed, unoccupied, occupied, size_m, team_colors, 
                 width, height, monster_move_verb, location, out
             )
 
             # If we successfully cast a spell, return early
             if spell_cast_successful:
-                return
+                return turn_commands
 
             # **EXECUTION FALLS THROUGH TO EXISTING MELEE CODE BLOCK**
             # If no spells worked, the code naturally continues to the melee logic below...
@@ -1272,7 +1227,7 @@ def process_monster_turn(indexed_combatant, out, overlays, desc, command_list, s
                     # Update the map regardless of movement
                     map_state["combatants"] = out
                     map_url = mapl.generate_map_image(overlays)
-                    command_list.append(f'{pref}embed -title "Monster Movement: {monster.name}" -desc "{desc[-1]}" -image "{map_url}"')
+                    turn_commands.append(f'embed -title "Monster Movement: {monster.name}" -desc "{desc[-1]}" -image "{map_url}"')
 
                     # Perform the ranged attack
                     # Check if this ranged attack can multiattack
@@ -1280,14 +1235,14 @@ def process_monster_turn(indexed_combatant, out, overlays, desc, command_list, s
                     
                     if can_multi and multi_count > 1:
                         # Perform multiattack with ranged weapon
-                        command_list.append(f'{pref}i a "{chosen_ranged_attack.raw["name"]}" -rr {multi_count} autoc -t {chosen_target} -phrase ":robot: _Triggered by auto monster AI_ :crossed_swords: Ranged Multiattack :crossed_swords:"')
+                        turn_commands.append(f'i a "{chosen_ranged_attack.raw["name"]}" -rr {multi_count} autoc -t {chosen_target} -phrase "{phrase} :crossed_swords: Ranged Multiattack :crossed_swords:"')
                     else:
                         # Perform single ranged attack
-                        command_list.append(f'{pref}i a "{chosen_ranged_attack.raw["name"]}" -t {chosen_target} -phrase ":robot: _Triggered by auto monster AI_"')
+                        turn_commands.append(f'i a "{chosen_ranged_attack.raw["name"]}" -t {chosen_target} -phrase "{phrase}"')
 
                     # End the monster's turn
-                    command_list.append(f'{pref}i n')
-                    return
+                    turn_commands.append('i n')
+                    return turn_commands
 
                 # If no ranged attacks, fallback to dashing for melee
                 # Monster needs to dash
@@ -1299,9 +1254,9 @@ def process_monster_turn(indexed_combatant, out, overlays, desc, command_list, s
                     go_distance = round(mapl.distance(start_pos, new_pos)) * 5
                     desc.append(f"{indexed_combatant} dashes {int(go_distance)} ft. out of their {monster_speed * 2} ft. dash distance, towards {chosen_target}.")
                     map_url = mapl.generate_map_image(overlays)
-                    command_list.append(f'{pref}embed -title "Monster Dashes: {monster.name}" -desc "{desc[-1]}" -image "{map_url}"')
-                    command_list.append(f'{pref}i n')
-                    return
+                    turn_commands.append(f'embed -title "Monster Dashes: {monster.name}" -desc "{desc[-1]}" -image "{map_url}"')
+                    turn_commands.append('i n')
+                    return turn_commands
                 else: # Monster can reach target  
                     new_location = mapl.coords_to_loc(go_coords)
                     mapl.update_position(monster, placed, go_coords, out)
@@ -1312,50 +1267,41 @@ def process_monster_turn(indexed_combatant, out, overlays, desc, command_list, s
                 # After movement, display the updated map
                 map_state["combatants"] = out
                 map_url = mapl.generate_map_image(overlays)
-                command_list.append(f'{pref}embed -title "Monster Movement: {monster.name}" -desc "{desc[-1]}" -image "{map_url}"')
+                turn_commands.append(f'embed -title "Monster Movement: {monster.name}" -desc "{desc[-1]}" -image "{map_url}"')
             else:
-                phrase = f"\nHolding Position to Attack!"
+                hold_phrase = f"\nHolding Position to Attack!"
         else:
             desc.append(f"Could not find location for target: {chosen_target}")
 
-    else:
-        chosen_target = targets[randint(len(targets))]
-        distance = 8  # Assume adjacent if no map
-        desc.append(f"{indexed_combatant} attacks {chosen_target}.")
+    map_url = mapl.generate_map_image(overlays)
 
-    # Attack logic
-    if distance <= get_max_attack_reach(monster.attacks) and (curr_hp > 0 or autolib.onDeath(indexed_combatant, c.combatants) == "relentless"):
-        # Get multiattack data for this monster
-        multi_atks = autolib.getMultiAttacks(monster_name, c)
-        
-        if multi_atks:
-            # Monster has multiattack capability
-            for atk, num in multi_atks.items():
-                atkr = autolib.resolveVersatile(atk)
-                command_list.append(f'{pref}i a "{atkr}" {snippets} -rr {num} autoc -t {chosen_target} -phrase ":robot: _Triggered by auto monster AI_ :crossed_swords: Multiattack :crossed_swords:{phrase}"')
-            command_list.append(f'{pref}i n')
-        else:
-            # No multiattack, use single attack
-            chosen_atk_string = autolib.getMeleeAttack(indexed_combatant, c.combatants)
-            command_list.append(f'{pref}i a "{chosen_atk_string}" {snippets} -t {chosen_target} autoc -phrase ":robot: _Triggered by auto monster AI_{phrase}"')
-            command_list.append(f'{pref}i n')    
-    elif curr_hp <= 0:
-        on_death = autolib.onDeath(indexed_combatant, c.combatants)
-        if on_death:
-            target_string = f"-t {chosen_target}" if "death" in on_death else ""
-            command_list.append(f'{pref}i a "{on_death}" {snippets} {target_string} -phrase ":robot: _Triggered by auto monster AI_"')
-        else:
-            desc.append(f"Skipping dead monster: {indexed_combatant}")
-            command_list.append(f'{pref}i n')
-    else:
-        desc.append(f"{indexed_combatant} couldn't reach {chosen_target} to attack.")
-        command_list.append(f'{pref}i n')
-
+    # Check if monster is dead at the start of its turn
     if monster.hp <= 0:
-        remove_dead_monster(c, monster, out, desc)
-        map_url = mapl.generate_map_image(overlays)
-        command_list.append(f'{pref}embed -title "Skipping dead monster: {monster_name}" -desc "{monster_name} has been defeated and removed from the map. Its turn will be skipped." -image "{map_url}"')
-        return
+        on_death = autolib.onDeath(indexed_combatant, c.combatants)
+        if on_death != "relentless":
+            if on_death:
+                target_string = f"-t {chosen_target}" if "death" in on_death else ""
+                turn_commands += [f'i a "{on_death}" {target_string} -phrase "{phrase}"']
+            death_desc =  f"{monster.name} has been defeated and removed from the map. Its turn will be skipped."
+            turn_commands.append(f'embed -title "Monster Turn Skipped" -desc "{death_desc}" -image "{map_url}"')
+
+    # No targets within range
+    elif get_max_attack_reach(monster.attacks) < distance:
+        no_range_desc = f"{monster.name} is out of range to attack {chosen_target}."
+        turn_commands.append(f'embed -title "Monster Turn Skipped" -desc "{no_range_desc}" -image "{map_url}"')
+
+    # Get multiattack data for this monster
+    elif multi_atks := autolib.getMultiAttacks(monster_name, c):
+        for atk, num in multi_atks.items():
+            atkr = autolib.resolveVersatile(atk)
+            turn_commands.append(f'i a "{atkr}" {snippets} -rr {num} autoc -t {chosen_target} -phrase "{phrase} :crossed_swords: Multiattack :crossed_swords:"')
+   
+    else: # No multiattack, just a single attack
+        chosen_atk_string = autolib.getMeleeAttack(indexed_combatant, c.combatants)
+        turn_commands.append(f'i a "{chosen_atk_string}" {snippets} -t {chosen_target} autoc -phrase "{phrase}"')
+
+    turn_commands.append('i n')
+    return turn_commands
 
 def remove_dead_monster(combat, monster, out, desc):
     if monster.name in out:
@@ -1374,101 +1320,133 @@ def toggle_monster_color(monster, new_color):
     
     return original_color
 
-def process_map_absentee_monster_turn(indexed_combatant, command_list):
+def process_map_absentee_monster_turn(indexed_combatant):
     title = f'New monster detected: {indexed_combatant}'
-    desc_text = f'This monster is not currently on the map, please place the monster\'s token on the map manually using: ```{pref}map -t {indexed_combatant}|C4```\nReplace `C4` to any location you like.'
-    command_list.append(f"""{pref}embed -title "{title}" -desc "{desc_text}" """)
-    command_list.append(f'{pref}i n')
+    desc = f'This monster is not currently on the map, please place the monster\'s token on the map manually using: ```{pref}map -t {indexed_combatant}|C4```\nReplace `C4` with any location you like.'
+    return [f'embed -title "{title}" -desc "{desc}"', 'i n']
 
+def get_end_command(i_name):
+    i_co = c.get_combatant(i_name)
+    title, desc = "", ""
+
+    if i_co.race:
+        title = f'Automation Complete! It\'s a player turn now! :mage:'
+        desc = f'Waiting on **{i_name}** to play their turn!'
+        if not get_uvar('mapStates'):
+            desc += helpl.move_help
+    
+    elif i_name.casefold().strip() in ['map', 'dm', 'lair']:
+        title = f'Automation Complete! Waiting on Lair Action :dragon:'
+        desc = f'Use `{pref}i n` if there are no actions to take this round!'
+    
+    elif i_co.get_effect('Stop Automation (auto)'):
+        title = f'Automation Complete! {i_name} is pausing automation!'
+        desc = f'Use `{pref}i n` to continue automation!'
+    
+    elif i_name not in current_team_names:
+        title = f'Automation Complete! It\'s another team\'s turn now! :mage:'
+        desc = f'Waiting on **{i_name}** to play their turn!'
+
+    elif i_co.group:
+        title = f'Automation Complete! It\'s a group\'s turn! :dragon:'
+        desc = f'Waiting on **{i_name}** to play their turn!'
+
+    if title or desc:
+        return f'embed -title "{title}" -desc "{desc}"'
+    return None
+
+def get_monster_pattern_data(co):
+    patterns = {}
+    aoe_attacks = mobl.get_aoe_attacks(co.name)
+    if aoe_attacks: patterns['aoe'] = aoe_attacks
+
+    spell_monster = co.spellbook.caster_level
+    if spell_monster:
+        spells = [spell.name for spell in co.spellbook.spells]
+        if spells: patterns['spells'] = spells
+
+    multi_atks = autolib.getMultiAttacks(co.monster_name, c)
+    if multi_atks: patterns['multiattack'] = multi_atks
+
+    if not patterns:
+        melee = autolib.getMeleeAttack(co.monster_name, c.combatants)
+        if melee: patterns['melee'] = melee
+    return patterns
 
 
 ###### TEST SUITES ######
 
-
 # Main code execution starts here
 
-indexed_cname_list = []
-curr_combatant = c.current
+auto_monster_turns = {}
 
 # map_url = mapl.generate_map_image(overlays)
-# command_list.append(f'''{pref}embed -title "Monsters are deciding their actions..." -image "{map_url}"''')
+# turn_commands.append(f'embed -title "Monsters are deciding their actions..." -image "{map_url}"')
 
-snippets = " ".join(&ARGS&)
-if inp.lower() in ('o', 'once'):
-    # Implement the 'once' sub-command
-    if current_init in monster_names:
-        process_monster_turn(current_init, out, overlays, desc, command_list, snippets[1:])
-        # Update map_state["combatants"] with 'out'
-        map_state["combatants"] = out
-        if overlays:
-            map_url = mapl.generate_map_image(overlays)
-            map_embed = f'{pref}embed -title "Updated Map" -desc "Monster movements displayed" -image "{map_url}"'
-            command_list.append(map_embed)
-        return command + nl.join(command_list)
-    
-# Build the indexed list starting from current initiative
-# Sort the combatants by initiative (descending) and then by name
-combatants_in_order = c.combatants
-cname_list_sorted = [combatant.name for combatant in combatants_in_order]
+current_co_index = all_co_names.index(current_co_name)
+current_co_group_names = all_co_names[current_co_index:] + all_co_names[:current_co_index]
 
-indexed_cname_list = cname_list_sorted[cname_list_sorted.index(current_init):] + cname_list_sorted[:cname_list_sorted.index(current_init)]
+# Get Automation Complete message
+end_command = ""
+for i in range(len(current_co_group_names)):
+    i_end = get_end_command(current_co_group_names[i])
+    if i_end: end_command = i_end
+    elif max_combatants <= i:
+        current_co_group_names = current_co_group_names[:(min(i, max_combatants))]
+    else: continue
+    current_co_group_names = current_co_group_names[:(min(i, max_combatants))]
+    break
 
-if len(indexed_cname_list) > 4:
-    indexed_cname_list = indexed_cname_list[:4]
+# PREPARE MONSTER PATTERN DATA
+monster_pattern_data = {}
+for co_name in current_co_group_names:
+    co = c.get_combatant(co_name)
+    if co.monster_name not in monster_pattern_data:
+        monster_pattern_data[co.monster_name] = get_monster_pattern_data(co)
+    # co_turn_patterns = monster_pattern_data[co.monster_name].copy()
+    # auto_monster_turns[co_name] = co_turn_patterns
 
-current_enemy = autolib.isMonster(c.current)
-for indexed_combatant in indexed_cname_list:
-    if len(command_list) > 10:
-        title = f'Whoa! You\'re pushing the limits of Avrae right now!'
-        desc_text = f'Unfortunately, this is the maximum number of attacks you can automate to prevent unnecessarily over-stressing Avrae!\n\n**But no worries, you can simply use `{cmd}` again now to repeat the cycle!**'
-        while len(command_list) > 10:
-            command_list.reverse()
-            last_n = command_list.index(f'{pref}i n')
-            command_list = command_list[last_n+1:]
-            command_list.reverse()
-        command_list.append(f'{pref}i n')
-        command_list.append(f"""{pref}embed -title "{title}" -desc "{desc_text}" """)
-        command += nl.join(command_list)
-        return command
-    
-    monster = c.get_combatant(indexed_combatant)    
-    if monster.monster_name and not monster.get_effect('Stop Automation (auto)'):
-        if autolib.isMonster(monster) != current_enemy:
-            title = f'''Automation Complete! It\'s the other side's turn now! :mage:'''
-            desc_text = f'Waiting on **{indexed_combatant}** to play their turn!'
-            command_list.append(f"""{pref}embed -title "{title}" -desc "{desc_text}" """)
-            return command + nl.join(command_list)
-            
-        note = mapl.parse_note(monster.note)
-        if not note or not 'location' in note:
-            process_map_absentee_monster_turn(indexed_combatant, command_list)
-        else:
-            process_monster_turn(indexed_combatant, out, overlays, desc, command_list, snippets)
-            monster_team = mapl.get_combatant_team(monster.name, teams)
-            toggle_monster_color(monster, team_colors.get(monster_team, 'r'))
-    else: # Handle non-monster combatants
-        if indexed_combatant.casefold() in ['map', 'dm', 'lair'] and c.get_combatant(indexed_combatant).init == 20:
-            title = f'Automation Complete! Waiting on Lair Action :dragon:'
-            desc_text = f'Use `{pref}i n` if there are no actions to take this round!'
-        elif monster.get_effect('Stop Automation (auto)'):
-            title = f'Automation Complete! {indexed_combatant} is pausing automation!'
-            desc_text = f'Use `{pref}i n` to continue automation!'
-        elif inp1.lower() in 'react':
-            command_list.pop()
-            title = f'Automation Complete! Pausing to allow player reaction! :mage:'
-            desc_text = f'After taking any reaction use `{pref}i n`'
-        else:
-            title = f'Automation Complete! It\'s a player turn now! :mage:'
-            desc_text = f'Waiting on **{indexed_combatant}** to play their turn!'
-        command_list.append(f"""{pref}embed -title "{title}" -desc "{desc_text}" """)
+snippets = " ".join(
+    &ARGS& if inp1.lower() not in ('o', 'once', 'react', 'reaction') else &ARGS&[1:]
+)
+max_commands = 8
+
+for i in range(len(current_co_group_names)):
+    i_co_name = current_co_group_names[i]
+    i_co = c.get_combatant(i_co_name)
+    note = mapl.parse_note(i_co.note)   
+
+    turn_commands = []
+    if not note or not 'location' in note:
+        turn_commands = process_map_absentee_monster_turn(i_co_name)
+    else:
+        turn_commands = process_monster_turn(i_co_name, out, overlays, desc, snippets)
+        toggle_monster_color(i_co, team_colors.get(current_co_team, 'r'))
+
+    commands += turn_commands
+    if max_commands <= len(commands) or len(current_co_group_names) <= i + 1:
+        end_command = f'embed -title "Automation Complete!" -desc "Run `{cmd}` again to continue automation!"'
         break
+    
+
+if inp1.lower() in ('react', 'reaction'):
+    if commands and commands[-1] == f'{pref}i n':
+        commands.pop()
+    title = f'Automation Complete! Pausing to allow player reaction! :mage:'
+    desc = f'After taking any reactions use `{pref}i n`'
+    commands += [f'embed -title "{title}" -desc "{desc}"']
+elif end_command:
+    commands.append(end_command)
+
 
 # Update map_state["combatants"] with 'out'
 map_state["combatants"] = out
 
 if overlays:
     map_url = mapl.generate_map_image(overlays)
-    map_embed = f'{pref}embed -title "Monster Movement Summary" -desc "Monster movements so far:" -image "{map_url}"'
-    command_list.append(map_embed)
-return command + nl.join(command_list)
+    commands += [f'embed -title "Monster Movement Summary" -desc "Monster movements so far:" -image "{map_url}"']
+
+if 1 < len(commands):
+    commands.insert(0, "multiline")
+return f'\n{pref}'.join(commands)
 </drac2>
