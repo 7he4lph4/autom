@@ -4,7 +4,7 @@ pref, al = ctx.prefix, ctx.alias
 cmd = pref+al
 null, nl, comma = '', '\n', ','
 args = argparse(&ARGS&)
-cname_list, commands, combatant_mismatch = [],[],[]
+cname_list, combatant_mismatch = [],[]
 multiattack, spell_viable, counter = False, False, 0
 
 team_colors = {1: "b", 2: "r", 3: "y", 4: "g", 5: "o", 6: "p"}
@@ -65,6 +65,7 @@ if inp1.lower() == 'lair':
         'embed -title "A Lair Object has been added!" -desc "A Lair object was added at Initiative 20 to run the Lair Actions of monsters." -color <color>'
     ])
 
+commands = []
 
 # INITIALIZING COMBAT AND MAP
 
@@ -1325,7 +1326,7 @@ def process_map_absentee_monster_turn(indexed_combatant):
     desc = f'This monster is not currently on the map, please place the monster\'s token on the map manually using: ```{pref}map -t {indexed_combatant}|C4```\nReplace `C4` with any location you like.'
     return [f'embed -title "{title}" -desc "{desc}"', 'i n']
 
-def get_end_command(i_name):
+def get_end_command(i_name, i):
     i_co = c.get_combatant(i_name)
     title, desc = "", ""
 
@@ -1338,6 +1339,14 @@ def get_end_command(i_name):
     elif i_name.casefold().strip() in ['map', 'dm', 'lair']:
         title = f'Automation Complete! Waiting on Lair Action :dragon:'
         desc = f'Use `{pref}i n` if there are no actions to take this round!'
+
+    elif i_co.group:
+        title = f'Automation Complete! It\'s a group\'s turn! :dragon:'
+        desc = f'Waiting on **{i_name}** to play their turn!'
+
+    elif i_co.get_effect(' Used') and 0 < i:
+        title = f'Automation Complete!'
+        desc = f'**{i_name}** has an ability on cooldown!\nAttempt the Recharge, then run `{cmd}` again to continue automation!'
     
     elif i_co.get_effect('Stop Automation (auto)'):
         title = f'Automation Complete! {i_name} is pausing automation!'
@@ -1347,9 +1356,9 @@ def get_end_command(i_name):
         title = f'Automation Complete! It\'s another team\'s turn now! :mage:'
         desc = f'Waiting on **{i_name}** to play their turn!'
 
-    elif i_co.group:
-        title = f'Automation Complete! It\'s a group\'s turn! :dragon:'
-        desc = f'Waiting on **{i_name}** to play their turn!'
+    elif max_combatants <= i:
+        title = f'Automation Complete!'
+        desc = f'Run `{cmd}` again to continue automation!'
 
     if title or desc:
         return f'embed -title "{title}" -desc "{desc}"'
@@ -1389,7 +1398,7 @@ current_co_group_names = all_co_names[current_co_index:] + all_co_names[:current
 # Get Automation Complete message
 end_command = ""
 for i in range(len(current_co_group_names)):
-    i_end = get_end_command(current_co_group_names[i])
+    i_end = get_end_command(current_co_group_names[i], i)
     if i_end: end_command = i_end
     elif max_combatants <= i:
         current_co_group_names = current_co_group_names[:(min(i, max_combatants))]
@@ -1424,7 +1433,7 @@ for i in range(len(current_co_group_names)):
         toggle_monster_color(i_co, team_colors.get(current_co_team, 'r'))
 
     commands += turn_commands
-    if max_commands <= len(commands) or len(current_co_group_names) <= i + 1:
+    if max_commands <= len(commands):
         end_command = f'embed -title "Automation Complete!" -desc "Run `{cmd}` again to continue automation!"'
         break
     
