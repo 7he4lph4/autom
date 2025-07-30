@@ -155,7 +155,7 @@ overlays = []
 desc = []
 
 # Remove dead monsters from combat
-is_current_dead_ally =  c.current and not c.current.type == "group" and not autolib.isMonster(c.current) and c.current.hp <= 0 # Need Refactor
+is_current_dead_ally =  c.current and not c.current.type == "group" and (c.current.race or c.current.monster_name) and not autolib.isMonster(c.current) and c.current.hp <= 0 # Need Refactor
 remove_dead = targl.dead_monsters + (targl.dead_allies if is_current_dead_ally else [])
 if remove_dead:
     for dead_monster in remove_dead:
@@ -1376,7 +1376,7 @@ auto_monster_turns = {} # Currently unused
 # turn_commands.append(f'embed -title "Monsters are deciding their actions..." -image "{map_url}"')
 
 all_cos = [(co.init, 0 if co.name in all_group_names else 1, co.name) for co in c.combatants + c.groups]
-all_cos.sort(key=lambda x: (x[0], x[1]))
+all_cos.sort(key=lambda x: (-x[0], x[1]))
 all_co_names = [name for _, _, name in all_cos]
 
 current_co_index = all_co_names.index(current_co_name)
