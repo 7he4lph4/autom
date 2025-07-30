@@ -155,7 +155,7 @@ overlays = []
 desc = []
 
 # Remove dead monsters from combat
-is_current_dead_ally = c.current and not autolib.isMonster(c.current) and c.current.hp <= 0
+is_current_dead_ally =  c.current and not c.current.type == "group" and not autolib.isMonster(c.current) and c.current.hp <= 0 # Need Refactor
 remove_dead = targl.dead_monsters + (targl.dead_allies if is_current_dead_ally else [])
 if remove_dead:
     for dead_monster in remove_dead:
@@ -172,7 +172,7 @@ if remove_dead:
     map_url = mapl.generate_map_image(overlays, map_state=map_state)
     desc_text = f"The following dead monsters were found:\n{', '.join([m.name for m in remove_dead])}"
     commands.append(f'embed -title "Removing Dead Monsters" -desc "{desc_text}" -image "{map_url}"')
-    commands.append('i n' if (c.current and c.current.hp <= 0) else 'i remove "Dead monsters"')
+    commands.append('i n' if (c.current and c.current.type != "group" and c.current.hp <= 0) else 'i remove "Dead monsters"')
     new_combat = True
 
 # Check if there are any monsters in initiative
@@ -209,7 +209,7 @@ targets, party, monsters = targl.get_target_lists()
 enemies = [e for e in current_team_enemies if e in [t.name for t in targets]]
 
 all_co_names = [c.name for c in combatants]
-
+all_group_names = [c.name for c in c.groups]
 
 # INITIALIZATION COMPLETE
 
@@ -1314,8 +1314,12 @@ def process_map_absentee_monster_turn(indexed_combatant):
     return [f'embed -title "{title}" -desc "{desc}"', 'i n']
 
 def get_end_command(i_name, i):
-    i_co = c.get_combatant(i_name)
     title, end_turn_text = "Automation Complete", f'\n\nEnd the turn with `{pref}i n` to continue `{cmd}`'
+
+    if i_name in all_group_names:
+        return f'embed -title "{title}: Group" -desc "**{i_name}** is a group.{end_turn_text}"'
+    
+    i_co = c.get_combatant(i_name)
 
     if i_co.race:
         move_help = helpl.move_help if not get_uvar('mapStates') else ''
@@ -1324,10 +1328,7 @@ def get_end_command(i_name, i):
     elif i_name.casefold().strip() in ['map', 'dm', 'lair']:
         return f'embed -title "{title}: Lair Actions" -desc "Waiting for **Lair Actions** on **Round 20**.{end_turn_text}"'
 
-    elif i_co.group:
-        return f'embed -title "{title}: Group" -desc "**{i_name}** is a group.{end_turn_text}"'
-
-    elif not i_co.race and not i_co.monster_name:
+    elif not i_co.monster_name:
         return f'embed -title "{title}: Object" -desc "**{i_name}** is not a player or monster.{end_turn_text}"'
 
     elif i_co.hp <= 0:
@@ -1374,23 +1375,27 @@ auto_monster_turns = {} # Currently unused
 # map_url = mapl.generate_map_image(overlays)
 # turn_commands.append(f'embed -title "Monsters are deciding their actions..." -image "{map_url}"')
 
+all_cos = [(co.init, 0 if co.name in all_group_names else 1, co.name) for co in c.combatants + c.groups]
+all_cos.sort(key=lambda x: (x[0], x[1]))
+all_co_names = [name for _, _, name in all_cos]
+
 current_co_index = all_co_names.index(current_co_name)
-current_co_group_names = all_co_names[current_co_index:] + all_co_names[:current_co_index]
+current_co_slice_names = all_co_names[current_co_index:] + all_co_names[:current_co_index]
 
 # Get Automation Complete message
 end_command = ""
-for i in range(len(current_co_group_names)):
-    i_end = get_end_command(current_co_group_names[i], i)
+for i in range(len(current_co_slice_names)):
+    i_end = get_end_command(current_co_slice_names[i], i)
     if i_end: end_command = i_end
     elif max_combatants <= i:
-        current_co_group_names = current_co_group_names[:(min(i, max_combatants))]
+        current_co_slice_names = current_co_slice_names[:(min(i, max_combatants))]
     else: continue
-    current_co_group_names = current_co_group_names[:(min(i, max_combatants))]
+    current_co_slice_names = current_co_slice_names[:(min(i, max_combatants))]
     break
 
 # PREPARE MONSTER PATTERN DATA
 monster_pattern_data = {}
-for co_name in current_co_group_names:
+for co_name in current_co_slice_names:
     co = c.get_combatant(co_name)
     if co.monster_name not in monster_pattern_data:
         monster_pattern_data[co.monster_name] = get_monster_pattern_data(co)
@@ -1402,8 +1407,8 @@ snippets = " ".join(
 )
 max_commands = 10
 
-for i in range(len(current_co_group_names)):
-    i_co_name = current_co_group_names[i]
+for i in range(len(current_co_slice_names)):
+    i_co_name = current_co_slice_names[i]
     i_co = c.get_combatant(i_co_name)
     note = mapl.parse_note(i_co.note)   
 
