@@ -51,6 +51,8 @@ out = {}
 #         co, name, movement, placed, enemies, closest, unoccupied, occupied, cell, location, out
 #     )
 
+
+
 target = randchoice(target_distances[closest])[0]
 if closest <= 5:
     if "m" in targ_args: return f'-t "{target}"'
@@ -60,6 +62,15 @@ move_melee = list(targ_args.keys())[0] == "m"
 flank = move_melee and get_svar("flank", True)
 for ttype, trange in targ_args.items():
     if not trange: return f'-t "{target}" {notes["no_range"]}'
+
+    if ttype == "e":
+        target_distances = Map.get_placed_distances(name, [t.name for t in targets], placed)
+        in_range_targets = []
+        for d, t in target_distances.items():
+            if d <= trange[0]:
+                in_range_targets += [dt[0] for dt in t if dt[0] not in in_range_targets]
+        return ' '.join(f'-t "{target}"' for target in in_range_targets)
+                
     
     atk_range, max_range = trange[0], trange[-1]
     adv = ""

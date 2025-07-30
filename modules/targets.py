@@ -7,16 +7,18 @@ using(
 )
 
 party = []
-monsters, dead_monsters = [], []
+dead_allies = []
+monsters = []
+dead_monsters = []
 
 if c := combat():
     for co in c.combatants:
-        if not co.hp or co.name.lower() in ["dm", "map", "lair"]:
+        if not co.race and not co.monster_name:
             continue
-        if 0 < co.hp:
-            (monsters if autolib.isMonster(co) else party).append(co)
-        elif autolib.isMonster(co):
-            dead_monsters.append(co)
+        if autolib.isMonster(co):
+            (monsters if co.hp > 0 else dead_monsters).append(co)
+        else:
+            (party if co.hp > 0 else dead_allies).append(co)
 
 notes = {
     "no_combat": '-f "|__**Channel is not in combat!**__"',
@@ -33,7 +35,7 @@ notes = {
 # Process arguments for -at targeting snippet
 def parse_target_args(args):
     processed_args = argparse(args).last("at", default="", ephem=True).lower().replace("true", "")
-    valid_args = ["m", "r", "dash"]
+    valid_args = ["m", "r", "e", "dash"]
 
     targ_args = {}
     for targ in processed_args.split("|"):
@@ -48,6 +50,8 @@ def parse_target_args(args):
         if len(tsubargs) == 1:
             if tsubargs[0].startswith("m"):
                 tsubargs = ["m", [5]]
+            elif tsubargs[0].startswith("e"):
+                tsubargs = ["e", [5]]
             else:
                 tsubargs = ["r", []]
 
