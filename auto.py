@@ -72,12 +72,6 @@ commands = []
 combatants = c.combatants
 combatant_list, party_list, monster_list = targl.get_target_lists()
 
-party_names = [p.name for p in party_list]
-monster_names, monster_types = [], []
-for mon in monster_list:
-    monster_names.append(mon.name)
-    monster_types.append(mon.monster_name)
-
 # Map-related variables
 alph = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 size_map = {'T': 1, 'S': 1, 'M': 1, 'L': 2, 'H': 3, 'G': 4}
@@ -128,6 +122,8 @@ for combatant_name, data in placed.items():
 
 out = {}
 
+monster_names = [mon.name for mon in monster_list]
+
 new_combat = False
 if (inp1.lower() in ['m', 'map']) or not map_info:
     map_name = inp2 if inp1.lower() in ['m', 'map'] else ""
@@ -147,9 +143,6 @@ if unplaced:
     commands.append(f'embed -title "Map Setup Complete!" -desc "All combatants have been placed on the map." -image "{map_url}"')
     new_combat = True
     
-if not party_names:
-    err(helpl.no_players)
-
 # Initialize overlays and descriptions
 overlays = []
 desc = []
@@ -172,46 +165,98 @@ if remove_dead:
     map_url = mapl.generate_map_image(overlays, map_state=map_state)
     desc_text = f"The following dead monsters were found:\n{', '.join([m.name for m in remove_dead])}"
     commands.append(f'embed -title "Removing Dead Monsters" -desc "{desc_text}" -image "{map_url}"')
-    commands.append('i n' if (c.current and c.current.type != "group" and c.current.hp <= 0) else 'i remove "Dead monsters"')
+    commands.append('i n' if (c.current and c.current.name == "Dead monsters") else 'i remove "Dead monsters"')
     new_combat = True
 
-# Check if there are any monsters in initiative
 if not targl.monsters:
-    title = "Automation Complete"
-    desc_text = f'**No monsters found in combat.**\nRun `{cmd}` after adding monsters to place them on the map!'
-    commands.append(f'embed -title "{title}" -desc "{desc_text}"')
-    if 1 < len(commands):
-        commands.insert(0, "multiline")
+    commands.append(f'embed -title "No Monsters to Automate" -desc "There are no monsters in combat.\n\nRun `{cmd}` after adding monsters to place them on the map."')
+    if 1 < len(commands): commands.insert(0, "multiline")
     return f'\n{pref}'.join(commands)
 
-# Check if it's the first round of combat
-if not c.current: commands.append('i n')
-
-# New combat current combatant is a monster
-if new_combat:
-    title = f'Ready to automate monsters! :robot:'
-    remove_dead_names = [dead.name for dead in remove_dead]
-    desc_text = f'''**Use `{cmd}` again to automate the following monsters:**\n{", ".join([m for m in monster_names if m not in remove_dead_names])}'''
-    commands.append(f'embed -title "{title}" -desc "{desc_text}"')
-    if 1 < len(commands):
-        commands.insert(0, "multiline")
-    return f'\n{pref}'.join(commands)
+if not c.current:
+    commands.append('i n')
+    new_combat = True
 
 # PREPARE COMBATANT TURN DATA
 
-max_combatants = 4 if (inp1.lower() not in ["o", "once", "react", "reaction"]) else 1
+max_combatants = 4
+max_commands = 10
 
-current_co_name = combatants[0].name if not c.current else c.current.name
+if (inp1.lower() in ["o", "once", "react", "reaction"]): max_combatants = 1
+if new_combat: max_combatants = 0
+
+all_group_names = [c.name for c in c.groups]
+all_cos = [(co.init, 1 if co.name in all_group_names else 0, co.name) for co in c.combatants + c.groups]
+all_cos.sort(key=lambda x: (x[0], x[1]), reverse=True)
+all_co_names = [name for _, _, name in all_cos]
+
+current_co_name = all_co_names[0] if not c.current else c.current.name
 current_co_team, current_team_enemies = targl.get_my_team(teams, current_co_name)
 current_team_names = teams.get(current_co_team, [])
 
-targets, party, monsters = targl.get_target_lists()
-enemies = [e for e in current_team_enemies if e in [t.name for t in targets]]
+targets, party, _ = targl.get_target_lists()
+current_team_enemy_names = [e for e in current_team_enemies if e in [t.name for t in targets]]
 
-all_co_names = [c.name for c in combatants]
-all_group_names = [c.name for c in c.groups]
+current_co_index = all_co_names.index(current_co_name)
+co_sliced_names = all_co_names[current_co_index:] + all_co_names[:current_co_index]
+
+def get_end_command(i):
+    title = "Automation Complete"
+    end_turn_text = f'\n\nEnd the turn with `{pref}i n` to continue `{cmd}`'
+
+    if not c.current or c.current.name == "Dead monsters":
+        title = "Automation Ready"
+
+    i_name = co_sliced_names[i]
+
+    if i_name in all_group_names: # Stop on group turn
+        return f'embed -title "{title}: Group" -desc "**{i_name}** is a group.{end_turn_text}"'
+    
+    i_co = c.get_combatant(i_name)
+
+    if i_co.race: # Stop on player turn
+        move_help = helpl.move_help if not get_uvar('mapStates') else ''
+        return f'embed -title "{title}: Player Turn" -desc "It\'s player **{i_name}**\'s turn!{end_turn_text} {move_help}"'
+
+    elif i_name.casefold().strip() in ['map', 'dm', 'lair']: # Stop on lair actions
+        return f'embed -title "{title}: Lair Actions" -desc "Waiting for **Lair Actions** on **Round 20**.{end_turn_text}"'
+
+    elif not i_co.monster_name: # Stop on objects
+        return f'embed -title "{title}: Object" -desc "**{i_name}** is not a player or monster.{end_turn_text}"'
+
+    elif i_co.hp <= 0: # Stop on dead combatant
+        return f'embed -title "{title}: Dead Monster" -desc "**{i_name}** has **0 HP**.\n\nContinue `{cmd}` to remove dead monsters from combat."'
+
+    elif i_co.get_effect(' Used') and 0 < i: # Stop on recharge ability
+        return f'embed -title "{title}: Recharge Ability" -desc "**{i_name}** is recharging an ability.\n\nAfter attempting to recharge, continue `{cmd}` to automate them."'
+    
+    elif i_co.get_effect('Stop Automation (auto)'): # Stop on !stopauto
+        return f'embed -title "{title}: Stop Auto" -desc "**{i_name}** has stopped automation.{end_turn_text}"'
+
+    elif i_name not in current_team_names: # Stop on different team
+        return f'embed -title "{title}" -desc "**{i_name}** is on a different team.\n\nContinue `{cmd}` to automate them."'
+
+    elif max_combatants <= i: # Stop on max combatants reached
+        return f'embed -title "{title}" -desc "Continue `{cmd}` to automate **{i_name}**."'
+    return None
 
 # INITIALIZATION COMPLETE
+
+auto_monster_turns = {}
+
+end_command = get_end_command(0)
+if end_command:
+    commands.append(end_command)
+    if 1 < len(commands):
+        commands.insert(0, "multiline")
+    return f'\n{pref}'.join(commands)
+
+for i in range(0, len(co_sliced_names)):
+    end_command = get_end_command(i)
+    if end_command:
+        co_sliced_names = co_sliced_names[:(min(i, max_combatants))]
+        break
+
 
 def find_best_aoe_position(monster, aoe_attack, target_names):
     best_position = None
@@ -1291,11 +1336,6 @@ def process_monster_turn(indexed_combatant, out, overlays, desc, snippets=""):
     turn_commands.append('i n')
     return turn_commands
 
-def remove_dead_monster(combat, monster, out, desc):
-    if monster.name in out:
-        out.pop(monster.name)
-    desc.append(f"{monster.name} has fallen and been removed from the map.")
-
 def toggle_monster_color(monster, new_color):
     note_dict = mapl.parse_note(monster.note)
     original_color = note_dict.get('color', 'r')
@@ -1313,40 +1353,7 @@ def process_map_absentee_monster_turn(indexed_combatant):
     desc = f'This monster is not currently on the map, please place the monster\'s token on the map manually using: ```{pref}map -t {indexed_combatant}|C4```\nReplace `C4` with any location you like.'
     return [f'embed -title "{title}" -desc "{desc}"', 'i n']
 
-def get_end_command(i_name, i):
-    title, end_turn_text = "Automation Complete", f'\n\nEnd the turn with `{pref}i n` to continue `{cmd}`'
-
-    if i_name in all_group_names:
-        return f'embed -title "{title}: Group" -desc "**{i_name}** is a group.{end_turn_text}"'
-    
-    i_co = c.get_combatant(i_name)
-
-    if i_co.race:
-        move_help = helpl.move_help if not get_uvar('mapStates') else ''
-        return f'embed -title "{title}: Player Turn" -desc "It\'s player **{i_name}**\'s turn!{end_turn_text} {move_help}"'
-
-    elif i_name.casefold().strip() in ['map', 'dm', 'lair']:
-        return f'embed -title "{title}: Lair Actions" -desc "Waiting for **Lair Actions** on **Round 20**.{end_turn_text}"'
-
-    elif not i_co.monster_name:
-        return f'embed -title "{title}: Object" -desc "**{i_name}** is not a player or monster.{end_turn_text}"'
-
-    elif i_co.hp <= 0:
-        return f'embed -title "{title}: Dead Monster" -desc "**{i_name}** has **0 HP**.\n\nContinue `{cmd}` to remove dead monsters from combat."'
-
-    elif i_co.get_effect(' Used') and 0 < i:
-        return f'embed -title "{title}: Recharge Ability" -desc "**{i_name}** is recharging an ability.\n\nAfter attempting to recharge, continue `{cmd}` to automate them."'
-    
-    elif i_co.get_effect('Stop Automation (auto)'):
-        return f'embed -title "{title}: Stop Auto" -desc "**{i_name}** has stopped automation.{end_turn_text}"'
-
-    elif i_name not in current_team_names:
-        return f'embed -title "{title}" -desc "**{i_name}** is on a different team.\n\nContinue `{cmd}` to automate them."'
-
-    elif max_combatants <= i:
-        return f'embed -title "{title}" -desc "Continue `{cmd}` to automate **{i_name}**."'
-    return None
-
+# Unused for now
 def get_monster_pattern_data(co):
     patterns = {}
     aoe_attacks = mobl.get_aoe_attacks(co.name)
@@ -1364,51 +1371,29 @@ def get_monster_pattern_data(co):
         melee = autolib.getMeleeAttack(co.monster_name, c.combatants)
         if melee: patterns['melee'] = melee
     return patterns
-
-
-###### TEST SUITES ######
-
-# Main code execution starts here
-
-auto_monster_turns = {} # Currently unused
-
-# map_url = mapl.generate_map_image(overlays)
-# turn_commands.append(f'embed -title "Monsters are deciding their actions..." -image "{map_url}"')
-
-all_cos = [(co.init, 0 if co.name in all_group_names else 1, co.name) for co in c.combatants + c.groups]
-all_cos.sort(key=lambda x: (-x[0], x[1]))
-all_co_names = [name for _, _, name in all_cos]
-
-current_co_index = all_co_names.index(current_co_name)
-current_co_slice_names = all_co_names[current_co_index:] + all_co_names[:current_co_index]
-
-# Get Automation Complete message
-end_command = ""
-for i in range(len(current_co_slice_names)):
-    i_end = get_end_command(current_co_slice_names[i], i)
-    if i_end: end_command = i_end
-    elif max_combatants <= i:
-        current_co_slice_names = current_co_slice_names[:(min(i, max_combatants))]
-    else: continue
-    current_co_slice_names = current_co_slice_names[:(min(i, max_combatants))]
-    break
-
 # PREPARE MONSTER PATTERN DATA
 monster_pattern_data = {}
-for co_name in current_co_slice_names:
+for co_name in co_sliced_names:
     co = c.get_combatant(co_name)
     if co.monster_name not in monster_pattern_data:
         monster_pattern_data[co.monster_name] = get_monster_pattern_data(co)
     # co_turn_patterns = monster_pattern_data[co.monster_name].copy()
     # auto_monster_turns[co_name] = co_turn_patterns
 
+
+###### TEST SUITES ######
+
+# Main code execution starts here
+
+# map_url = mapl.generate_map_image(overlays)
+# turn_commands.append(f'embed -title "Monsters are deciding their actions..." -image "{map_url}"')
+
 snippets = " ".join(
     &ARGS& if inp1.lower() not in ('o', 'once', 'react', 'reaction') else &ARGS&[1:]
 )
-max_commands = 10
 
-for i in range(len(current_co_slice_names)):
-    i_co_name = current_co_slice_names[i]
+for i in range(len(co_sliced_names)):
+    i_co_name = co_sliced_names[i]
     i_co = c.get_combatant(i_co_name)
     note = mapl.parse_note(i_co.note)   
 
