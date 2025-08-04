@@ -168,7 +168,11 @@ if remove_dead:
     map_url = mapl.generate_map_image(overlays, map_state=map_state)
     desc_text = f"The following dead monsters were found:\n{', '.join([m.name for m in remove_dead])}"
     commands.append(f'embed -title "Removing Dead Monsters" -desc "{desc_text}" -image "{map_url}"')
-    if c.current and (c.current.name == "Dead monsters") or (c.current.type == "combatant" and c.current.hp <= 0):
+    if c.current and (
+        (c.current.name == "Dead monsters")
+        or (c.current.type == "combatant" and c.current.hp <= 0)
+        or (c.current.type == "group" and not [gc for gc in c.current.combatants if 0 < gc.hp])
+    ):
         commands.append('i n')
     else:
         commands.append('i remove "Dead monsters"')
