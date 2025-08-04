@@ -176,6 +176,7 @@ if remove_dead:
         commands.append('i n')
     else:
         commands.append('i remove "Dead monsters"')
+    max_combatants = 0
 
 if not targl.monsters:
     commands.append(f'embed -title "No Monsters to Automate" -desc "There are no monsters in combat.\n\nRun `{cmd}` after adding monsters to place them on the map."')
@@ -212,12 +213,14 @@ def get_end_command(i):
     i_name = co_sliced_names[i]
     i_co = c.get_combatant(i_name)
 
-    if not c.current or i_co.group == "Dead monsters":
+    if not c.current:
         title = "Automation Ready"
         max_combatants = 0
-        i += 1
-        i_name = co_sliced_names[i]
-        i_co = c.get_combatant(i_name)
+
+    if i_co.group == "Dead monsters":
+        title = "Automation Ready"
+        max_combatants = 0
+        return get_end_command(i+1)
 
     if i_co.group and i_co.group != "Dead monsters": # Stop on group turn
         return f'embed -title "{title}: Group" -desc "**{i_co.group}** is a group.{end_turn_text}"'
@@ -1419,7 +1422,7 @@ for i in range(len(co_sliced_names)):
     
 
 if inp1.lower() in ('react', 'reaction'):
-    if commands and commands[-1] == f'{pref}i n':
+    if commands and commands[-1] == 'i n':
         commands.pop()
     title = f'Automation Complete! Pausing to allow player reaction! :mage:'
     desc = f'After taking any reactions use `{pref}i n`'
