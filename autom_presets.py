@@ -169,7 +169,7 @@ def generate_list_embeds(footer):
     chunks = [map_list[i : i + chunk_size] for i in range(0, len(map_list), chunk_size)]
     return [
         (
-            f'{pref}embed -title "Available Map Presets (Page {i+1}/{len(chunks)})" -desc "'
+            f'embed -title "Available Map Presets (Page {i+1}/{len(chunks)})" -desc "'
             + "\n".join(chunk)
             + f'" -footer "{footer}"'
         )
