@@ -898,9 +898,9 @@ def can_move_into_spell_range(current_pos, target_pos, spell_range, monster_spee
 def attempt_spell_cast_in_range(monster, spell_name, spell_level, spell_range, target_distance, chosen_target, spell_aoe_info, teams, placed, indexed_combatant, overlays, desc, turn_commands, map_state, monster_pos, team_colors, width, height):
     """Handle spell casting when already in range"""
     debug_log = f"[CAST-IN-RANGE:{spell_name}:L{spell_level}:R{spell_range}:D{target_distance}]"
-    
+
     # Build targeting and overlay
-    target_string = f"-t {chosen_target}"
+    target_string = f'-t "{chosen_target}"'
     
     # **AoE OVERLAY DRAWING**
     if spell_name in spell_aoe_info:
@@ -924,7 +924,7 @@ def attempt_spell_cast_in_range(monster, spell_name, spell_level, spell_range, t
             # Create circle overlay and targeting string
             circle_overlay = f"c{aoe_size}{overlay_color}{best_center}"
             overlays.append(f"*{circle_overlay}")
-            target_string = build_target_string(targets_in_aoe) if targets_in_aoe else f"-t {chosen_target}"
+            target_string = build_target_string(targets_in_aoe) if targets_in_aoe else f'-t "{chosen_target}"'
             
             # Generate description
             if targets_in_aoe:
@@ -988,7 +988,7 @@ def attempt_spell_cast_with_movement(monster, spell_name, spell_level, spell_ran
         overlays.append(create_arrow_overlay(distance_moved, location, mapl.coords_to_loc(new_pos)))
     
     # Handle AoE after movement (similar to in-range logic but with movement description)
-    target_string = f"-t {chosen_target}"
+    target_string = f'-t "{chosen_target}"'
     movement_desc = f"moves and casts *{spell_name}* (Level {spell_level})"
     
     if spell_name in spell_aoe_info:
@@ -1006,7 +1006,7 @@ def attempt_spell_cast_with_movement(monster, spell_name, spell_level, spell_ran
             
             circle_overlay = f"c{aoe_data['size']}{overlay_color}{best_center}"
             overlays.append(f"*{circle_overlay}")
-            target_string = build_target_string(targets_in_aoe) if targets_in_aoe else f"-t {chosen_target}"
+            target_string = build_target_string(targets_in_aoe) if targets_in_aoe else f'-t "{chosen_target}"'
             
             if targets_in_aoe:
                 enemies = [t for t in targets_in_aoe if t["team"] != monster_team]
@@ -1102,7 +1102,7 @@ def process_spellcasting(monster, indexed_combatant, chosen_target, distance, te
 
 def build_target_string(targets):
     """Build -t target1 -t target2 string"""
-    return " ".join(f"-t {target['name']}" for target in targets)
+    return " ".join(f'-t "{target["name"]}"' for target in targets)
 
 def create_aoe_overlay(shape_type, size, color, center, end_point=None):
     """Extensible AoE overlay creation for future shapes"""
@@ -1257,7 +1257,7 @@ def process_monster_turn(indexed_combatant, out, overlays, desc, snippets=""):
 
                     # Add the attack command targeting all affected combatants
                     if affected_targets:
-                        target_string = " -t ".join(affected_targets)
+                        target_string = " -t ".join([f'"{t}"' for t in affected_targets])
                         turn_commands.append(f'i a "{breath_weapon["name"]}" -t {target_string} -phrase "{phrase}\n{breath_phrase}"')
 
                         # Add " Used" effect to track that breath was used
@@ -1317,7 +1317,7 @@ def process_monster_turn(indexed_combatant, out, overlays, desc, snippets=""):
 
                     # Add the attack command targeting all affected combatants
                     if affected_targets:
-                        target_string = " -t ".join(affected_targets)
+                        target_string = " -t ".join([f'"{t}"' for t in affected_targets])
                         turn_commands.append(f'i a "{aoe_attack["name"]}" -t {target_string} -phrase "{phrase}"')
                     else:
                         desc.append(f"No targets were caught in the AoE of {aoe_attack['name']}.")
@@ -1406,10 +1406,10 @@ def process_monster_turn(indexed_combatant, out, overlays, desc, snippets=""):
                     
                     if can_multi and multi_count > 1:
                         # Perform multiattack with ranged weapon
-                        turn_commands.append(f'i a "{chosen_ranged_attack.raw["name"]}" -rr {multi_count} autoc -t {chosen_target} -phrase "{phrase} :crossed_swords: Ranged Multiattack :crossed_swords:"')
+                        turn_commands.append(f'i a "{chosen_ranged_attack.raw["name"]}" -rr {multi_count} autoc -t "{chosen_target}" -phrase "{phrase} :crossed_swords: Ranged Multiattack :crossed_swords:"')
                     else:
                         # Perform single ranged attack
-                        turn_commands.append(f'i a "{chosen_ranged_attack.raw["name"]}" -t {chosen_target} -phrase "{phrase}"')
+                        turn_commands.append(f'i a "{chosen_ranged_attack.raw["name"]}" -t "{chosen_target}" -phrase "{phrase}"')
 
                     # End the monster's turn
                     turn_commands.append('i n')
@@ -1455,11 +1455,11 @@ def process_monster_turn(indexed_combatant, out, overlays, desc, snippets=""):
     elif multi_atks := autolib.getMultiAttacks(monster_name, c):
         for atk, num in multi_atks.items():
             atkr = autolib.resolveVersatile(atk)
-            turn_commands.append(f'i a "{atkr}" {snippets} -rr {num} autoc -t {chosen_target} -phrase "{phrase} :crossed_swords: Multiattack :crossed_swords:"')
-   
+            turn_commands.append(f'i a "{atkr}" {snippets} -rr {num} autoc -t "{chosen_target}" -phrase "{phrase} :crossed_swords: Multiattack :crossed_swords:"')
+
     else: # No multiattack, just a single attack
         chosen_atk_string = autolib.getMeleeAttack(indexed_combatant, c.combatants)
-        turn_commands.append(f'i a "{chosen_atk_string}" {snippets} -t {chosen_target} autoc -phrase "{phrase}"')
+        turn_commands.append(f'i a "{chosen_atk_string}" {snippets} -t "{chosen_target}" autoc -phrase "{phrase}"')
 
     turn_commands.append('i n')
     return turn_commands
