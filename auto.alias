@@ -802,15 +802,15 @@ def attempt_spell_cast_in_range(monster, spell_name, spell_level, spell_range, t
         elif aoe_shape == "Cone":
             turn_commands.append(f'embed -title "DEBUG: Cone Detected" -desc "Spell: {spell_name}, Shape: {aoe_shape}, Size: {aoe_size}"')
             caster_location = mapl.coords_to_loc(monster_pos)
-            target_names = [t["name"] for t in all_positions.values() if t["team"] != monster_team]
-            turn_commands.append(f'embed -title "DEBUG: Cone Setup" -desc "Caster: {caster_location}, Targets: {target_names}, Team: {monster_team}"')
-            best_aim, affected_targets = dragonlib.find_best_cone_aim(caster_location, target_names, aoe_size, c)
-            turn_commands.append(f'embed -title "DEBUG: Cone Aim Result" -desc "best_aim: {best_aim}, affected_targets: {affected_targets}"')
+            all_target_names = [t["name"] for t in all_positions.values()]
+            turn_commands.append(f'embed -title "DEBUG: Cone Setup" -desc "Caster: {caster_location}, All Targets: {all_target_names}, Team: {monster_team}"')
+            best_aim, hits_all, enemy_names = dragonlib.find_best_cone_aim(caster_location, all_target_names, aoe_size, c, monster_team, teams)
+            turn_commands.append(f'embed -title "DEBUG: Cone Aim Result" -desc "best_aim: {best_aim}, hits_all: {hits_all}, enemy_names: {enemy_names}"')
 
-            if best_aim and affected_targets:
+            if best_aim and enemy_names:
                 overlays.append(f"*t{aoe_size}{overlay_color}{caster_location}{best_aim}")
-                target_string = " ".join(f'-t "{name}"' for name in affected_targets)
-                desc.append(f"{indexed_combatant} aims {spell_name} cone towards {best_aim} - {aoe_size} ft. hitting {len(affected_targets)} targets: {', '.join(affected_targets)}")
+                target_string = " ".join(f'-t "{name}"' for name in enemy_names)
+                desc.append(f"{indexed_combatant} aims {spell_name} cone towards {best_aim} - {aoe_size} ft. hitting {len(enemy_names)} targets: {', '.join(enemy_names)}")
                 map_url = mapl.generate_map_image(overlays)
                 turn_commands.append(f'embed -title "{monster.name} casts cone spell - {spell_name}!" -desc "{desc[-1]}" -image "{map_url}"')
             else:
@@ -821,13 +821,13 @@ def attempt_spell_cast_in_range(monster, spell_name, spell_level, spell_range, t
         # **LINE HANDLING**
         elif aoe_shape == "Line":
             caster_location = mapl.coords_to_loc(monster_pos)
-            target_names = [t["name"] for t in all_positions.values() if t["team"] != monster_team]
-            best_aim, affected_targets = dragonlib.find_best_line_aim(caster_location, target_names, aoe_size, 5, c)
+            all_target_names = [t["name"] for t in all_positions.values()]
+            best_aim, hits_all, enemy_names = dragonlib.find_best_line_aim(caster_location, all_target_names, aoe_size, 5, c, monster_team, teams)
 
-            if best_aim and affected_targets:
+            if best_aim and enemy_names:
                 overlays.append(f"*l{aoe_size},5{overlay_color}{caster_location}{best_aim}")
-                target_string = " ".join(f'-t "{name}"' for name in affected_targets)
-                desc.append(f"{indexed_combatant} aims {spell_name} line towards {best_aim} - {aoe_size}x5 ft. hitting {len(affected_targets)} targets: {', '.join(affected_targets)}")
+                target_string = " ".join(f'-t "{name}"' for name in enemy_names)
+                desc.append(f"{indexed_combatant} aims {spell_name} line towards {best_aim} - {aoe_size}x5 ft. hitting {len(enemy_names)} targets: {', '.join(enemy_names)}")
                 map_url = mapl.generate_map_image(overlays)
                 turn_commands.append(f'embed -title "{monster.name} casts line spell - {spell_name}!" -desc "{desc[-1]}" -image "{map_url}"')
             else:
@@ -1126,29 +1126,37 @@ def process_monster_turn(indexed_combatant, out, overlays, desc, snippets=""):
             # Choose a random available breath weapon
             breath_weapon = randchoice(available_breaths)
 
+            # Get caster's team for team-aware targeting
+            caster_team = mapl.get_combatant_team(monster.name, teams)
+
             # Use proper cone/line targeting algorithms
             best_aim = None
-            affected_targets = []
+            hits_all = []
+            enemy_names = []
 
             if breath_weapon['shape']['shape'] == 'cone':
                 # Find optimal cone aim
-                best_aim, affected_targets = dragonlib.find_best_cone_aim(
+                best_aim, hits_all, enemy_names = dragonlib.find_best_cone_aim(
                     location,
                     potential_targets,
                     breath_weapon['shape']['size'],
                     c,
+                    caster_team,
+                    teams,
                 )
             elif breath_weapon['shape']['shape'] == 'line':
                 # Find optimal line aim
-                best_aim, affected_targets = dragonlib.find_best_line_aim(
+                best_aim, hits_all, enemy_names = dragonlib.find_best_line_aim(
                     location,
                     potential_targets,
                     breath_weapon['shape']['size'],
                     breath_weapon['shape'].get('width', 5),
                     c,
+                    caster_team,
+                    teams,
                 )
 
-            if best_aim and affected_targets:
+            if best_aim and enemy_names:
                 # Create breath weapon overlay with correct color
                 breath_overlay = dragonlib.create_breath_overlay(
                     location,
@@ -1166,7 +1174,7 @@ def process_monster_turn(indexed_combatant, out, overlays, desc, snippets=""):
                     turn_commands.append(f'embed -title "Breath Weapon: {monster.name}" -desc "{desc[-1]}" -image "{map_url}"')
 
                     # Build breath attack phrase
-                    targets_hit = len(affected_targets)
+                    targets_hit = len(enemy_names)
                     breath_phrase = dragonlib.format_breath_attack_phrase(
                         breath_weapon['name'],
                         breath_weapon['type'],
@@ -1175,8 +1183,8 @@ def process_monster_turn(indexed_combatant, out, overlays, desc, snippets=""):
                     )
 
                     # Add the attack command targeting all affected combatants
-                    if affected_targets:
-                        target_string = " -t ".join([f'"{t}"' for t in affected_targets])
+                    if enemy_names:
+                        target_string = " -t ".join([f'"{t}"' for t in enemy_names])
                         turn_commands.append(f'i a "{breath_weapon["name"]}" -t {target_string} -phrase "{phrase}\n{breath_phrase}"')
 
                         # Add " Used" effect to track that breath was used

@@ -358,18 +358,66 @@ def is_in_cone(origin_loc, aim_loc, target_loc, cone_size_ft):
     return perp_dist_squares <= allowed_radius_squares
 
 
-def find_best_cone_aim(origin_loc, targets, cone_size_ft, c_obj):
+def score_aoe_targets(targets_hit, caster_team, ally_penalty, c_obj, teams):
     """
-    Find best cone aim using proper cone collision detection.
+    Universal AoE scoring function.
+    Returns: (score, enemies, allies, enemy_names_only)
+
+    Args:
+        targets_hit: List of target names in AoE
+        caster_team: Caster's team number
+        ally_penalty: -1 for circles, -3 for cone/line
+        c_obj: Combat object
+        teams: Full teams dict
+    """
+    enemies = []
+    allies = []
+
+    for target_name in targets_hit:
+        target = c_obj.get_combatant(target_name)
+        if not target:
+            continue
+
+        # Determine target's team
+        target_team = None
+        for team_num, members in teams.items():
+            if target_name in members:
+                target_team = team_num
+                break
+
+        if target_team == caster_team:
+            allies.append(target_name)
+        else:
+            enemies.append(target_name)
+
+    score = (len(enemies) * 2) + (len(allies) * ally_penalty)
+
+    return score, enemies, allies, enemies
+
+
+def find_best_cone_aim(origin_loc, all_targets, cone_size_ft, c_obj, caster_team, teams):
+    """
+    Find best cone aim using proper cone collision detection with team-aware scoring.
     Tests aiming at each target (max iterations = # of targets).
     Uses vector math (dot/cross product) for accurate cone AoE.
-    """
-    if not targets:
-        return None, []
 
-    # Get target locations
+    Args:
+        origin_loc: Caster's location
+        all_targets: ALL combatant names (enemies + allies)
+        cone_size_ft: Cone size in feet
+        c_obj: Combat object
+        caster_team: Caster's team number
+        teams: Full teams dict
+
+    Returns:
+        (best_aim, best_hits_all, best_hits_enemies_only)
+    """
+    if not all_targets:
+        return None, [], []
+
+    # Get ALL target locations (enemies + allies)
     target_locations = {}
-    for tname in targets:
+    for tname in all_targets:
         target = c_obj.get_combatant(tname)
         if target:
             tmap = mapl.parse_note(target.note)
@@ -378,41 +426,62 @@ def find_best_cone_aim(origin_loc, targets, cone_size_ft, c_obj):
                 target_locations[tname] = tloc
 
     if not target_locations:
-        return None, []
+        return None, [], []
 
-    # Try aiming at each target location (limited iterations)
+    # Try aiming at each target location
     best_aim = None
-    best_hits = []
-    max_hit_count = 0
+    best_hits_all = []
+    best_hits_enemies_only = []
+    best_score = -999
 
     for tname, tloc in target_locations.items():
-        # Count how many targets are hit when aiming at this location
+        # Find all hits when aiming at this location
         hits = []
         for check_name, check_loc in target_locations.items():
             if is_in_cone(origin_loc, tloc, check_loc, cone_size_ft):
                 hits.append(check_name)
 
-        # Update best
-        if len(hits) > max_hit_count:
-            max_hit_count = len(hits)
+        # Score this aim with team awareness
+        score, enemies, allies, enemy_names = score_aoe_targets(hits, caster_team, -3, c_obj, teams)
+
+        # Early exit optimization: 3+ enemies, no allies = perfect
+        if score >= 6 and len(allies) == 0:
+            return tloc, hits, enemy_names
+
+        # Update best aim
+        if score > best_score:
+            best_score = score
             best_aim = tloc
-            best_hits = hits
+            best_hits_all = hits
+            best_hits_enemies_only = enemy_names
 
-    return best_aim, best_hits
+    return best_aim, best_hits_all, best_hits_enemies_only
 
 
-def find_best_line_aim(origin_loc, targets, line_length_ft, line_width_ft, c_obj):
+def find_best_line_aim(origin_loc, all_targets, line_length_ft, line_width_ft, c_obj, caster_team, teams):
     """
-    Find best line aim using influence mapping approach.
+    Find best line aim using influence mapping approach with team-aware scoring.
     Tests aiming at each target (max iterations = # of targets).
     Uses MAPL's get_line_area with Bresenham's algorithm.
-    """
-    if not targets:
-        return None, []
 
-    # Get target coords once
+    Args:
+        origin_loc: Caster's location
+        all_targets: ALL combatant names (enemies + allies)
+        line_length_ft: Line length in feet
+        line_width_ft: Line width in feet
+        c_obj: Combat object
+        caster_team: Caster's team number
+        teams: Full teams dict
+
+    Returns:
+        (best_aim, best_hits_all, best_hits_enemies_only)
+    """
+    if not all_targets:
+        return None, [], []
+
+    # Get ALL target coords (enemies + allies)
     target_coords = {}
-    for tname in targets:
+    for tname in all_targets:
         target = c_obj.get_combatant(tname)
         if target:
             tmap = mapl.parse_note(target.note)
@@ -422,16 +491,17 @@ def find_best_line_aim(origin_loc, targets, line_length_ft, line_width_ft, c_obj
                 target_coords[tname] = (tx, ty)
 
     if not target_coords:
-        return None, []
+        return None, [], []
 
     # Convert origin and calculate max distance
     ox, oy = mapl.loc_to_coords(origin_loc)
     max_dist = line_length_ft / 5
 
-    # Try aiming at each target location (limited iterations)
+    # Try aiming at each target location
     best_aim = None
-    best_hits = []
-    max_hit_count = 0
+    best_hits_all = []
+    best_hits_enemies_only = []
+    best_score = -999
 
     for tname in target_coords:
         tx, ty = target_coords[tname]
@@ -453,19 +523,27 @@ def find_best_line_aim(origin_loc, targets, line_length_ft, line_width_ft, c_obj
         line_area_coords = mapl.get_line_area((ox, oy), (end_x, end_y), line_width_ft / 5)
         line_area_set = set(line_area_coords)
 
-        # Count hits
+        # Find all hits
         hits = []
         for check_name, (cx, cy) in target_coords.items():
             if (cx, cy) in line_area_set:
                 hits.append(check_name)
 
-        # Update best
-        if len(hits) > max_hit_count:
-            max_hit_count = len(hits)
-            best_aim = mapl.coords_to_loc((tx, ty))
-            best_hits = hits
+        # Score this aim with team awareness
+        score, enemies, allies, enemy_names = score_aoe_targets(hits, caster_team, -3, c_obj, teams)
 
-    return best_aim, best_hits
+        # Early exit optimization: 3+ enemies, no allies = perfect
+        if score >= 6 and len(allies) == 0:
+            return mapl.coords_to_loc((tx, ty)), hits, enemy_names
+
+        # Update best aim
+        if score > best_score:
+            best_score = score
+            best_aim = mapl.coords_to_loc((tx, ty))
+            best_hits_all = hits
+            best_hits_enemies_only = enemy_names
+
+    return best_aim, best_hits_all, best_hits_enemies_only
 
 
 def find_breath_targets(monster_loc, target_loc, breath_shape, all_targets):
