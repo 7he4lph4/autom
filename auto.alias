@@ -275,150 +275,6 @@ for i in range(0, len(co_sliced_names)):
         break
 
 
-def find_best_aoe_position(monster, aoe_attack, target_names):
-    best_position = None
-    max_targets = 0
-    monster_map_data = mapl.parse_note(monster.note)
-    monster_location = monster_map_data.get('location', None)
-    if not monster_location:
-        return None
-
-    mapX, mapY = width, height
-
-    # Generate positions in the monster's line of sight/direction
-    # For simplicity, we'll consider positions in front of the monster
-    # Assuming the monster is facing towards the majority of targets
-
-    # Find the center position of all targets to determine general direction
-    target_positions = []
-    for target_name in target_names:
-        target = c.get_combatant(target_name)
-        if target:
-            target_map_data = mapl.parse_note(target.note)
-            target_location = target_map_data.get('location', None)
-            if target_location:
-                coords = mapl.loc_to_coords(target_location)
-                target_positions.append(coords)
-
-    if not target_positions:
-        return None
-
-    # Calculate average position of targets
-    avg_x = sum(pos[0] for pos in target_positions) / len(target_positions)
-    avg_y = sum(pos[1] for pos in target_positions) / len(target_positions)
-    direction_vector = [avg_x - mapl.loc_to_coords(monster_location)[0], avg_y - mapl.loc_to_coords(monster_location)[1]]
-
-    # Normalize direction vector
-    length = sqrt(direction_vector[0] ** 2 + direction_vector[1] ** 2)
-    if length == 0:
-        direction_vector = [0, 1]  # Default direction
-    else:
-        direction_vector = [direction_vector[0] / length, direction_vector[1] / length]
-
-    # Check positions in the direction the monster is facing
-    for distance in range(1, max(mapX, mapY)):
-        x = mapl.loc_to_coords(monster_location)[0] + int(direction_vector[0] * distance)
-        y = mapl.loc_to_coords(monster_location)[1] + int(direction_vector[1] * distance)
-        if x < 0 or y < 1 or x >= len(alph) or y > mapY:
-            break
-        position = f"{alph[x]}{y}"
-        affected_targets = count_affected_targets(position, aoe_attack, target_names)
-        if affected_targets > max_targets:
-            max_targets = affected_targets
-            best_position = position
-
-    return best_position
-
-def count_affected_targets(position, aoe_attack, targets):
-    affected = 0
-
-    for target in targets:
-        target_map_data = mapl.parse_note(c.get_combatant(target).note)
-        target_location = target_map_data.get('location', None)
-        if target_location and is_in_aoe(position, target_location, aoe_attack):
-            affected += 1
-    return affected
-
-def is_in_aoe(origin, target, aoe_attack):
-    ox, oy = alph.index(origin[0]), int(origin[1:])
-    tx, ty = alph.index(target[0]), int(target[1:])
-    dx, dy = abs(tx - ox), abs(ty - oy)
-    distance = max(dx, dy) * 5  # Assuming 5ft per square
-
-    if aoe_attack['shape'] in ['cone', 'sphere', 'radius']:
-        return distance <= aoe_attack['size']
-    elif aoe_attack['shape'] == 'line':
-        return (dx == 0 or dy == 0 or dx == dy) and distance <= aoe_attack['size']
-    elif aoe_attack['shape'] in ['cube', 'cylinder']:
-        return dx <= aoe_attack['size'] // 5 and dy <= aoe_attack['size'] // 5
-
-    return False
-
-def distance(pos1, pos2):
-    x1, y1 = alph.index(pos1[0].upper()), int(pos1[1:])
-    x2, y2 = alph.index(pos2[0].upper()), int(pos2[1:])
-    dx = abs(x2 - x1)
-    dy = abs(y2 - y1)
-    
-    # D&D 5e uses a simplified diagonal movement rule
-    # where every other diagonal counts as 10 feet instead of 5
-    diagonals = min(dx, dy)
-    straight = abs(dx - dy)
-    
-    return (diagonals * 5) + (straight * 5)
-
-def draw_aoe_overlay(monster, aoe_attack, position, targets):
-    shapeDict = [{"type": "circle",     "name":"c",  "num": [3], "args": ("size", "color", "loc")},
-               {"type": "circletop",    "name":"ct", "num": [3], "args": ("size", "color", "loc")},
-               {"type": "circlecorner", "name":"co", "num": [3], "args": ("size", "color", "loc")},
-               {"type": "cone",         "name":"t",  "num": [4], "args": ("size", "color", "loc", "eloc")},
-               {"type": "line",         "name":"l",  "num": [5], "args": ("size", "width", "color", "loc", "eloc")},
-               {"type": "arrow",        "name":"a",  "num": [3], "args": ("color", "loc", "eloc")},
-               {"type": "square",       "name":"s",  "num": [3,4], "args": ("size", "color", "loc", "eloc")},
-               {"type": "squaretop",    "name":"st", "num": [3,4], "args": ("size", "color", "loc", "eloc")}]
-
-    color = 'r'  # Default color for AoE
-    shape = aoe_attack['shape']
-    size = aoe_attack.get('size', 10)
-    
-    # Create a dictionary mapping shape names to their short codes
-    shape_to_code = {item['type']: item['name'] for item in shapeDict}
-    
-    if shape in ['sphere', 'radius', 'cube', 'cylinder']:
-        shape_code = shape_to_code['circle' if shape in ['sphere', 'radius'] else 'square']
-        return f"{shape_code}{size}{color}{position}"
-    
-    if shape in ['cone', 'line']:
-        nearest_target = min(targets, key=lambda t: distance(position, mapl.parse_note(c.get_combatant(t).note).get('location', 'A1')))
-        nearest_pos = mapl.parse_note(c.get_combatant(nearest_target).note).get('location', 'A1')
-        shape_code = shape_to_code[shape]
-        return f"{shape_code}{size},{aoe_attack.get('width', size) if shape == 'line' else ''}{color}{position}{nearest_pos}".rstrip(',')
-    
-    return None
-
-def find_adjacent_position(monster_location, target_position):
-    mx, my = alph.index(monster_location[0]), int(monster_location[1:])
-    tx, ty = alph.index(target_position[0]), int(target_position[1:])
-    
-    adjacent_positions = [
-        (mx-1, my), (mx+1, my), (mx, my-1), (mx, my+1),
-        (mx-1, my-1), (mx-1, my+1), (mx+1, my-1), (mx+1, my+1)
-    ]
-    
-    closest_position = min(adjacent_positions, key=lambda p: ((p[0]-tx)**2 + (p[1]-ty)**2))
-    return f"{alph[closest_position[0]]}{closest_position[1]}"
-
-def get_targets_in_aoe(monster_location, aoe_attack, target_names):
-    affected_targets = []
-    for target_name in target_names:
-        target = c.get_combatant(target_name)
-        if target:
-            target_map_data = mapl.parse_note(target.note)
-            target_location = target_map_data.get('location', None)
-            if target_location and is_in_aoe(monster_location, target_location, aoe_attack):
-                affected_targets.append(target_name)
-    return affected_targets
-
 def get_attack_reach(attack_str):
     attack_str = attack_str.lower()
     if 'reach' in attack_str:
@@ -772,7 +628,7 @@ def preprocess_spell_data(spell_list, spell_data):
     # Range/AoE shape mapping for quick lookup
     shape_map = {
         "u": "Radius", "r": "Radius", "t": "Square", "q": "Square",
-        "g": "Cone", "p": "Line", "w": "Wall", "a": "Feet",
+        "g": "Cone", "c": "Cone", "p": "Line", "l": "Line", "w": "Wall", "a": "Feet",
         "s": "Self", "v": "Self", "y": "Sight", "z": "Willing", "x": "Unlimited"
     }
     
@@ -784,13 +640,13 @@ def preprocess_spell_data(spell_list, spell_data):
             # Parse range/AoE from "r" key
             range_code = spell_info.get("r", "")
             range_value, aoe_size, shape_code = parse_spell_range_aoe(range_code)
-            
+
             # Set spell range
             if range_value == 0 and aoe_size > 0:
                 spell_ranges[spell_name] = aoe_size  # Self spells use AoE size as effective range
             else:
                 spell_ranges[spell_name] = range_value if range_value > 0 else 30
-            
+
             # Store AoE info if it has area effect
             if aoe_size > 0 and shape_code in shape_map:
                 origin = "Self" if range_code.upper().startswith('S') else "Target"
@@ -941,6 +797,43 @@ def attempt_spell_cast_in_range(monster, spell_name, spell_level, spell_range, t
             map_state["combatants"] = map_state.get("combatants", {})
             map_url = mapl.generate_map_image(overlays)
             turn_commands.append(f'embed -title "{monster.name} casts an AoE Spell - {spell_name} on the map!" -desc "{desc[-1]}" -image "{map_url}"')
+
+        # **CONE HANDLING**
+        elif aoe_shape == "Cone":
+            turn_commands.append(f'embed -title "DEBUG: Cone Detected" -desc "Spell: {spell_name}, Shape: {aoe_shape}, Size: {aoe_size}"')
+            caster_location = mapl.coords_to_loc(monster_pos)
+            target_names = [t["name"] for t in all_positions.values() if t["team"] != monster_team]
+            turn_commands.append(f'embed -title "DEBUG: Cone Setup" -desc "Caster: {caster_location}, Targets: {target_names}, Team: {monster_team}"')
+            best_aim, affected_targets = dragonlib.find_best_cone_aim(caster_location, target_names, aoe_size, c)
+            turn_commands.append(f'embed -title "DEBUG: Cone Aim Result" -desc "best_aim: {best_aim}, affected_targets: {affected_targets}"')
+
+            if best_aim and affected_targets:
+                overlays.append(f"*t{aoe_size}{overlay_color}{caster_location}{best_aim}")
+                target_string = " ".join(f'-t "{name}"' for name in affected_targets)
+                desc.append(f"{indexed_combatant} aims {spell_name} cone towards {best_aim} - {aoe_size} ft. hitting {len(affected_targets)} targets: {', '.join(affected_targets)}")
+                map_url = mapl.generate_map_image(overlays)
+                turn_commands.append(f'embed -title "{monster.name} casts cone spell - {spell_name}!" -desc "{desc[-1]}" -image "{map_url}"')
+            else:
+                turn_commands.append(f'embed -title "DEBUG: Cone Failed" -desc "Falling back to single target: {chosen_target}"')
+                target_string = f'-t "{chosen_target}"'
+                desc.append(f"{indexed_combatant} casts *{spell_name}*")
+
+        # **LINE HANDLING**
+        elif aoe_shape == "Line":
+            caster_location = mapl.coords_to_loc(monster_pos)
+            target_names = [t["name"] for t in all_positions.values() if t["team"] != monster_team]
+            best_aim, affected_targets = dragonlib.find_best_line_aim(caster_location, target_names, aoe_size, 5, c)
+
+            if best_aim and affected_targets:
+                overlays.append(f"*l{aoe_size},5{overlay_color}{caster_location}{best_aim}")
+                target_string = " ".join(f'-t "{name}"' for name in affected_targets)
+                desc.append(f"{indexed_combatant} aims {spell_name} line towards {best_aim} - {aoe_size}x5 ft. hitting {len(affected_targets)} targets: {', '.join(affected_targets)}")
+                map_url = mapl.generate_map_image(overlays)
+                turn_commands.append(f'embed -title "{monster.name} casts line spell - {spell_name}!" -desc "{desc[-1]}" -image "{map_url}"')
+            else:
+                target_string = f'-t "{chosen_target}"'
+                desc.append(f"{indexed_combatant} casts *{spell_name}*")
+
         else:
             # Non-circle AoE fallback
             desc.append(f"{indexed_combatant} casts *{spell_name}*")
@@ -1015,7 +908,33 @@ def attempt_spell_cast_with_movement(monster, spell_name, spell_level, spell_ran
                 ally_names = ", ".join([t["name"] for t in allies])
                 hit_desc = f"{len(enemies)} enemies: {enemy_names}" + (f" + ⚠️{len(allies)} allies: {ally_names}" if allies else "")
                 movement_desc = f"targets {best_center} with *{spell_name}* (now {new_distance} ft. away, spell range {spell_range} ft.) - {aoe_data['size']} ft. radius hitting {hit_desc}"
-    
+
+        elif aoe_data["shape"] == "Cone":
+            caster_location = mapl.coords_to_loc(new_pos)
+            monster_team = mapl.get_combatant_team(indexed_combatant, teams)
+            overlay_color = team_colors.get(monster_team, "r")
+            team_positions, all_positions = get_team_positions(teams, placed, indexed_combatant)
+            target_names = [t["name"] for t in all_positions.values() if t["team"] != monster_team]
+            best_aim, affected_targets = dragonlib.find_best_cone_aim(caster_location, target_names, aoe_data["size"], c)
+
+            if best_aim and affected_targets:
+                overlays.append(f"*t{aoe_data['size']}{overlay_color}{caster_location}{best_aim}")
+                target_string = " ".join(f'-t "{name}"' for name in affected_targets)
+                movement_desc = f"aims {spell_name} cone towards {best_aim} - {aoe_data['size']} ft. hitting {len(affected_targets)} targets: {', '.join(affected_targets)}"
+
+        elif aoe_data["shape"] == "Line":
+            caster_location = mapl.coords_to_loc(new_pos)
+            monster_team = mapl.get_combatant_team(indexed_combatant, teams)
+            overlay_color = team_colors.get(monster_team, "r")
+            team_positions, all_positions = get_team_positions(teams, placed, indexed_combatant)
+            target_names = [t["name"] for t in all_positions.values() if t["team"] != monster_team]
+            best_aim, affected_targets = dragonlib.find_best_line_aim(caster_location, target_names, aoe_data["size"], 5, c)
+
+            if best_aim and affected_targets:
+                overlays.append(f"*l{aoe_data['size']},5{overlay_color}{caster_location}{best_aim}")
+                target_string = " ".join(f'-t "{name}"' for name in affected_targets)
+                movement_desc = f"aims {spell_name} line towards {best_aim} - {aoe_data['size']}x5 ft. hitting {len(affected_targets)} targets: {', '.join(affected_targets)}"
+
     # Build final description
     movement_verb = 'move' if monster_move_verb == 'walk' else '*fly*'
     actual_distance = round(mapl.distance(start_pos, new_pos)) * 5
@@ -1269,62 +1188,6 @@ def process_monster_turn(indexed_combatant, out, overlays, desc, snippets=""):
                     turn_commands.append('i n')
                     return turn_commands
         ### BREATH WEAPONS ###
-
-        ### AoE ###
-        aoe_attacks = mobl.get_aoe_attacks(monster.name)
-        if aoe_attacks:
-            aoe_attack = randchoice(aoe_attacks)
-
-            # Find the best position for the AoE attack
-            best_position = find_best_aoe_position(monster, aoe_attack, potential_targets)
-
-            if best_position:
-                # Calculate the distance to the best position
-                end_pos = mapl.loc_to_coords(best_position)
-                distance_to_position = mapl.distance(start_pos, end_pos) * 5
-
-                # Move the monster if needed
-                if distance_to_position > 0:
-                    move_distance = min(monster_speed, distance_to_position)
-                    new_location, arrow, new_pos = move_towards(start_pos, end_pos, move_distance, unoccupied)
-                    mapl.update_position(monster, placed, new_pos, out)
-                    if arrow:
-                        overlays.append(arrow)
-                    location = new_location
-                    desc.append(f"{indexed_combatant} uses {int(move_distance)} ft. out of their {monster_speed} ft. to {'move' if monster_move_verb == 'walk' else '*fly*'} towards an optimal position for its AoE attack.")
-
-                    # Display the updated map after movement
-                    map_state["combatants"] = out
-                    map_url = mapl.generate_map_image(overlays)
-                    turn_commands.append(f'embed -title "Monster Movement: {monster.name}" -desc "{desc[-1]}" -image "{map_url}"')
-
-                # Adjust the AoE position for cone and line attacks
-                if aoe_attack['shape'] in ['cone', 'line']:
-                    best_position = find_adjacent_position(location, best_position)
-
-                # Create and add the AoE overlay
-                overlay = draw_aoe_overlay(monster, aoe_attack, best_position, potential_targets)
-                if overlay:
-                    overlays.append(f"*{overlay}")
-                    desc.append(f"{monster.name} uses {aoe_attack['name']} starting at {location} towards {best_position}")
-
-                    # Display the map with the AoE overlay
-                    map_url = mapl.generate_map_image(overlays)
-                    turn_commands.append(f'embed -title "AoE Attack: {monster.name}" -desc "{desc[-1]}" -image "{map_url}"')
-
-                    # Find targets within the AoE
-                    affected_targets = get_targets_in_aoe(location, aoe_attack, potential_targets)
-
-                    # Add the attack command targeting all affected combatants
-                    if affected_targets:
-                        target_string = " -t ".join([f'"{t}"' for t in affected_targets])
-                        turn_commands.append(f'i a "{aoe_attack["name"]}" -t {target_string} -phrase "{phrase}"')
-                    else:
-                        desc.append(f"No targets were caught in the AoE of {aoe_attack['name']}.")
-
-                    turn_commands.append('i n')
-                    return turn_commands
-        ### AoE ###
 
         chosen_target, distance, melee = find_best_target(monster, targets, unoccupied, target_distances)
         
