@@ -297,109 +297,121 @@ def get_breath_attacks(monster):
 # - Shadowcasting FOV algorithms (MRPAS, symmetric shadowcasting)
 # - These are more complex but provide better obstacle handling
 
-def is_in_cone_fast(ox, oy, ax, ay, tx, ty, cone_size_ft):
+def is_in_cone(origin_loc, aim_loc, target_loc, cone_size_ft):
     """
-    Fast cone check using pre-converted coordinates.
-    Simple distance-based approximation for performance.
+    Check if target is within a cone AoE using proper vector math.
+    Cone emanates from origin towards aim point.
+
+    D&D 5e cone rules:
+    - Cone starts at origin point
+    - Spreads out in direction of aim
+    - Width at end equals length (e.g., 30ft cone is 30ft wide at 30ft distance)
     """
-    # Vector from origin to aim
+    # Convert locations to coordinates
+    ox, oy = mapl.loc_to_coords(origin_loc)
+    ax, ay = mapl.loc_to_coords(aim_loc)
+    tx, ty = mapl.loc_to_coords(target_loc)
+
+    # Vector from origin to aim (direction of cone)
     aim_dx = ax - ox
     aim_dy = ay - oy
+    aim_length = (aim_dx * aim_dx + aim_dy * aim_dy) ** 0.5
+
+    if aim_length == 0:
+        return False
+
+    # Normalize aim vector
+    aim_nx = aim_dx / aim_length
+    aim_ny = aim_dy / aim_length
 
     # Vector from origin to target
     target_dx = tx - ox
     target_dy = ty - oy
 
-    # Simple distance check - target within cone range
-    target_dist_sq = target_dx * target_dx + target_dy * target_dy
-    max_dist_sq = (cone_size_ft / 5) * (cone_size_ft / 5)
+    # Distance from origin to target (in squares)
+    target_dist_squares = (target_dx * target_dx + target_dy * target_dy) ** 0.5
+    target_dist_ft = target_dist_squares * 5
 
-    if target_dist_sq > max_dist_sq:
+    # Check if target is beyond cone range
+    if target_dist_ft > cone_size_ft:
         return False
 
-    # Rough angle check - is target in same general direction as aim?
-    # Dot product > 0 means target is in front half-plane
-    dot = target_dx * aim_dx + target_dy * aim_dy
-    return dot > 0
+    # Dot product to find projection of target onto aim direction
+    dot_product = target_dx * aim_nx + target_dy * aim_ny
 
-
-def is_in_line_fast(ox, oy, ax, ay, tx, ty, line_length_ft, line_width_ft):
-    """
-    Fast line check using pre-converted coordinates.
-    Simple axis-aligned or diagonal line check.
-    """
-    # Vector from origin to target
-    target_dx = tx - ox
-    target_dy = ty - oy
-
-    # Simple distance check
-    dist_sq = target_dx * target_dx + target_dy * target_dy
-    max_dist_sq = (line_length_ft / 5) * (line_length_ft / 5)
-
-    if dist_sq > max_dist_sq:
+    # Target should be in front of origin (positive dot product)
+    if dot_product <= 0:
         return False
 
-    # For line, check if roughly aligned with aim direction
-    aim_dx = ax - ox
-    aim_dy = ay - oy
+    # Cross product to find perpendicular distance from aim line
+    # In 2D: cross = ax*by - ay*bx
+    cross_product = abs(target_dx * aim_ny - target_dy * aim_nx)
+    perp_dist_squares = cross_product
 
-    # Dot product for alignment
-    dot = target_dx * aim_dx + target_dy * aim_dy
-    return dot > 0
+    # Cone width at target's distance
+    # D&D 5e: total width at distance d = d (e.g., 30ft cone is 30ft wide at 30ft)
+    # Therefore radius (perpendicular distance from centerline) = d/2
+    # At distance d squares, allowed radius = d/2 squares
+    allowed_radius_squares = dot_product / 2
+
+    # Check if target is within cone radius at its distance
+    return perp_dist_squares <= allowed_radius_squares
 
 
 def find_best_cone_aim(origin_loc, targets, cone_size_ft, c_obj):
     """
-    Find the best aim point for a cone to hit maximum targets.
-    Fast approximation - aims at center of target cluster.
+    Find best cone aim using proper cone collision detection.
+    Tests aiming at each target (max iterations = # of targets).
+    Uses vector math (dot/cross product) for accurate cone AoE.
     """
     if not targets:
         return None, []
 
-    # Convert origin once
-    ox, oy = mapl.loc_to_coords(origin_loc)
-
-    # Get target coords (convert once)
-    target_data = []
+    # Get target locations
+    target_locations = {}
     for tname in targets:
         target = c_obj.get_combatant(tname)
         if target:
             tmap = mapl.parse_note(target.note)
             tloc = tmap.get('location')
             if tloc:
-                tx, ty = mapl.loc_to_coords(tloc)
-                target_data.append((tname, tloc, tx, ty))
+                target_locations[tname] = tloc
 
-    if not target_data:
+    if not target_locations:
         return None, []
 
-    # Simple strategy: aim at first target
-    # This avoids expensive loops while still being functional
-    best_aim = target_data[0][1]  # location of first target
-    ax, ay = target_data[0][2], target_data[0][3]  # coords of first target
+    # Try aiming at each target location (limited iterations)
+    best_aim = None
+    best_hits = []
+    max_hit_count = 0
 
-    # Check which targets are hit
-    hit_targets = []
-    for tname, tloc, tx, ty in target_data:
-        if is_in_cone_fast(ox, oy, ax, ay, tx, ty, cone_size_ft):
-            hit_targets.append(tname)
+    for tname, tloc in target_locations.items():
+        # Count how many targets are hit when aiming at this location
+        hits = []
+        for check_name, check_loc in target_locations.items():
+            if is_in_cone(origin_loc, tloc, check_loc, cone_size_ft):
+                hits.append(check_name)
 
-    return best_aim, hit_targets
+        # Update best
+        if len(hits) > max_hit_count:
+            max_hit_count = len(hits)
+            best_aim = tloc
+            best_hits = hits
+
+    return best_aim, best_hits
 
 
 def find_best_line_aim(origin_loc, targets, line_length_ft, line_width_ft, c_obj):
     """
-    Find the best aim point for a line to hit maximum targets.
-    Fast approximation - aims at first target.
+    Find best line aim using influence mapping approach.
+    Tests aiming at each target (max iterations = # of targets).
+    Uses MAPL's get_line_area with Bresenham's algorithm.
     """
     if not targets:
         return None, []
 
-    # Convert origin once
-    ox, oy = mapl.loc_to_coords(origin_loc)
-
-    # Get target coords (convert once)
-    target_data = []
+    # Get target coords once
+    target_coords = {}
     for tname in targets:
         target = c_obj.get_combatant(tname)
         if target:
@@ -407,22 +419,53 @@ def find_best_line_aim(origin_loc, targets, line_length_ft, line_width_ft, c_obj
             tloc = tmap.get('location')
             if tloc:
                 tx, ty = mapl.loc_to_coords(tloc)
-                target_data.append((tname, tloc, tx, ty))
+                target_coords[tname] = (tx, ty)
 
-    if not target_data:
+    if not target_coords:
         return None, []
 
-    # Simple strategy: aim at first target
-    best_aim = target_data[0][1]
-    ax, ay = target_data[0][2], target_data[0][3]
+    # Convert origin and calculate max distance
+    ox, oy = mapl.loc_to_coords(origin_loc)
+    max_dist = line_length_ft / 5
 
-    # Check which targets are hit
-    hit_targets = []
-    for tname, tloc, tx, ty in target_data:
-        if is_in_line_fast(ox, oy, ax, ay, tx, ty, line_length_ft, line_width_ft):
-            hit_targets.append(tname)
+    # Try aiming at each target location (limited iterations)
+    best_aim = None
+    best_hits = []
+    max_hit_count = 0
 
-    return best_aim, hit_targets
+    for tname in target_coords:
+        tx, ty = target_coords[tname]
+
+        # Calculate line endpoint in direction of target
+        dx = tx - ox
+        dy = ty - oy
+        dist = (dx * dx + dy * dy) ** 0.5
+
+        if dist == 0:
+            continue
+
+        # Extend to max line length
+        scale = max_dist / dist
+        end_x = ox + dx * scale
+        end_y = oy + dy * scale
+
+        # Get line area using MAPL's Bresenham algorithm
+        line_area_coords = mapl.get_line_area((ox, oy), (end_x, end_y), line_width_ft / 5)
+        line_area_set = set(line_area_coords)
+
+        # Count hits
+        hits = []
+        for check_name, (cx, cy) in target_coords.items():
+            if (cx, cy) in line_area_set:
+                hits.append(check_name)
+
+        # Update best
+        if len(hits) > max_hit_count:
+            max_hit_count = len(hits)
+            best_aim = mapl.coords_to_loc((tx, ty))
+            best_hits = hits
+
+    return best_aim, best_hits
 
 
 def find_breath_targets(monster_loc, target_loc, breath_shape, all_targets):

@@ -488,7 +488,7 @@ def box(top_left, size=0, include_inner=False):
     if size <= 0:
         return [top_left]
     x0, y0 = int(top_left[0]), int(top_left[1])
-    x1, y1 = x0 + size, y0 + size
+    x1, y1 = x0 + int(size), y0 + int(size)
     x_range = range(max(x0, 0), x1 + 1)
     y_range = range(max(y0 + 1, 1), y1)
     box_coords = [(x, y) for x in x_range for y in (y0, y1) if 0 < y]
@@ -606,23 +606,23 @@ def get_line_area(start_pos, end_pos, width=0):
     if dx == 0 and dy == 0:
         coords.extend(box([x, y], width))
     elif dx >= dy:
-        err = dx / 2.0
+        line_err = dx / 2.0
         while x != x2:
             coords.extend(box([x, y], width))
-            err -= dy
-            if err < 0:
+            line_err -= dy
+            if line_err < 0:
                 y += sy
-                err += dx
+                line_err += dx
             x += sx
         coords.extend(box([x, y], width))
     else:
-        err = dy / 2.0
+        line_err = dy / 2.0
         while y != y2:
             coords.extend(box([x, y], width))
-            err -= dx
-            if err < 0:
+            line_err -= dx
+            if line_err < 0:
                 x += sx
-                err += dy
+                line_err += dy
             y += sy
         coords.extend(box([x, y], width))
     # Remove duplicates
