@@ -1,19 +1,62 @@
-# Auto Map Base Map Functions
+# Auto Map Module
 
-alph = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-c = combat()
-size_dict = {
-    "T": "Tiny",
-    "S": "Small",
-    "M": "Medium",
-    "L": "Large",
-    "H": "Huge",
-    "G": "Gargantuan",
-}
 using(
     autolib="ec14bc6e-81e4-4df7-86e9-5d64ed2fa9b7",
     mobl="65c27eae-11c3-4b5c-90e5-472bc49f0037",
 )
+true_distance = get_svar("trueDistance", True)
+
+alph = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+
+c = combat()
+
+
+# Initialization Functions
+map_init_commands = []
+
+
+def parse_map_info(info):
+    return {f[0].lower(): f[1] for f in [i.split(": ") for i in [r for r in info.split(" ~ ")]] if len(f) == 2}
+
+
+def get_map_info():
+    if c:
+        map_combatant = None
+        for combatant in c.combatants:
+            for effect in combatant.effects:
+                if effect.name == "map":
+                    map_info = parse_map_info(effect.attacks[0].attack.automation[0].text)
+                    return map_info, combatant
+            if combatant.name.lower() in ["map", "dm", "lair"]:
+                map_combatant = combatant
+
+        if not map_combatant:
+            if c.me:
+                map_combatant = c.me
+            elif pcs := [co for co in c.combatants if co.race]:
+                map_combatant = pcs[0]
+
+        if map_combatant:
+            map_combatant.add_effect(
+                "map", attacks=[{"attack": {"name": "map", "automation": [{"type": "text", "text": ""}], "_v": 2}}]
+            )
+            return {}, map_combatant
+
+    return {}, None
+
+
+def parse_mapsize(size_str):
+    return (
+        [16, 16]
+        if ("x" not in size_str or any(not s.isdigit() for s in size_str.split("x")))
+        else [max(1, int(s)) for s in size_str.split("x")][:2]
+    )
+
+
+map_info, map_attach = get_map_info()
+map_size = parse_mapsize(map_info.get("size", "16x16"))
+map_options = map_info.get("options", "")
+map_bg = map_info.get("background", "")
 
 
 def get_combatant_team(combatant_name, teams):
@@ -22,36 +65,6 @@ def get_combatant_team(combatant_name, teams):
         if combatant_name in team_members:
             return team_num
     return 1  # Default fallback
-
-
-def mapPresent():
-    map_combatant = None
-    for name in ("map", "dm", "lair"):
-        map_combatant = c.get_combatant(name)
-        if map_combatant:
-            break
-    return map_combatant
-
-
-def parse_map_info(info):
-    return {f[0].lower(): f[1] for f in [i.split(": ") for i in [r for r in info.split(" ~ ")]] if len(f) == 2}
-
-
-def parse_mapsize(size_str):
-    return (
-        [20, 20]
-        if ("x" not in size_str or any(not s.isdigit() for s in size_str.split("x")))
-        else [max(1, int(s)) for s in size_str.split("x")][:2]
-    )
-
-
-def get_map_info():
-    for combatant in c.combatants:
-        for effect in combatant.effects:
-            if effect.name == "map":
-                map_info = parse_map_info(effect.attacks[0].attack.automation[0].text)
-                return map_info, combatant
-    return {}, None
 
 
 def parse_note(note):
@@ -267,6 +280,7 @@ def update_occupied(occupied_grid, space_mod, data, width, height):
 
 
 def place_combatants(placed, unplaced, width, height, out, map_state, teams=None, team_colors=None):
+    size_dict = {"T": "Tiny", "S": "Small", "M": "Medium", "L": "Large", "H": "Huge", "G": "Gargantuan"}
     size_groups = {"G": [], "H": [], "L": [], "M": []}
     for upc, data in unplaced.items():
         if not mobl.get_stored_monster_data(data.combatant.monster_name):
@@ -376,18 +390,18 @@ def get_nearest_coords(coords1, coords2):
     return dist, c1_nearest, c2_nearest
 
 
-def get_nearest(pos1, size1, pos2, size2):
-    nx1, ny1 = pos1
-    nx2, ny2 = pos2
+def get_nearest(loc1, size1, loc2, size2):
+    nx1, ny1 = loc1
+    nx2, ny2 = loc2
     x, s = 0, max(size1, size2)
     while x < s:
         x += 1
         if x <= size1:
-            x1, y1 = pos1[0] + x, pos1[1] + x
+            x1, y1 = loc1[0] + x, loc1[1] + x
             nx1 = x1 if (abs(nx2 - x1) < abs(nx2 - nx1)) else nx1
             ny1 = y1 if (abs(ny2 - y1) < abs(ny2 - ny1)) else ny1
         if x <= size2:
-            x2, y2 = pos2[0] + x, pos2[1] + x
+            x2, y2 = loc2[0] + x, loc2[1] + x
             nx2 = x2 if ((abs(nx1 - x2) < abs(nx1 - nx2))) else nx2
             ny2 = y2 if ((abs(ny1 - y2) < abs(ny1 - ny2))) else ny2
     distance = round(distance((nx1, ny1), (nx2, ny2))) * 5
@@ -440,6 +454,235 @@ def filter_occupied(name, placed, distances, move_coords, max_targets=1):
                 if max_targets <= len(targets):
                     return targets
     return targets
+
+
+# Coordinate Functions V2
+
+
+def cell_to_loc(cell):
+    cell_x = "".join(x for x in cell if x.isalpha()).upper()
+    cell_y = "".join(y for y in cell if y.isdigit())
+    if not cell_x or not cell_y:
+        return (0, 0)
+    x = 0
+    for s in cell_x:
+        x = x * 26 + (alph.index(s) + 1)
+    return (x, int(cell_y))
+
+
+def loc_to_cell(location):
+    loc_x = ""
+    x = round(location[0]) - 1
+    while 0 <= x:
+        loc_x = alph[x % 26] + loc_x
+        x = (x // 26) - 1
+    return f"{loc_x}{round(location[1])}"
+
+
+def update_adjacent_2(data, placed):
+    if 0 < len(data.get("adjacent", [])):
+        for name in data["adjacent"]:
+            placed[name]["adjacent"].remove(data["combatant"].name)
+    data["adjacent"] = []
+
+    x, y = data["loc"]
+    size_offset = (data["size_mod"] + 1, data["size_mod"] + 1)
+    for pname, pc in placed.items():
+        pcx, pcy = subtract_coords(pc["loc"], size_offset)
+        pc_size = size_offset[0] + pc["size_mod"] + 1
+        if (x in range(pcx, pcx + pc_size + 1)) and (y in range(pcy, pcy + pc_size + 1)):
+            data["adjacent"].append(pname)
+            pc["adjacent"].append(data["combatant"].name)
+
+
+def process_map_combatant_2(combatant, placed, teams=None, team_colors=None):
+    data = parse_note(combatant.note)
+    if teams and team_colors:
+        combatant_team = get_combatant_team(combatant.name, teams)
+        default_color = team_colors.get(combatant_team, "r")
+    else:
+        default_color = "r" if autolib.isMonster(combatant) else "b"
+    data["color"] = data.get("color", default_color)
+    data["combatant"] = combatant
+    if "location" in data:
+        data["cell"] = data.pop("location")
+        data["loc"] = cell_to_loc(data["cell"])
+        data["size_mod"] = get_size_mod(data.get("size", "M"))
+        update_adjacent_2(data, placed)
+        return data, True
+    return data, False
+
+
+def get_placed_combatants_2(teams=None, team_colors=None):
+    placed, unplaced = {}, {}
+    for co in c.combatants:
+        if typeof(co) == "SimpleGroup":
+            for gco in co.combatants:
+                data, p = process_map_combatant_2(gco, placed, teams, team_colors)
+                (placed if p else unplaced)[gco.name] = data
+        elif co.name.lower() not in ["map", "dm", "lair"]:
+            data, p = process_map_combatant_2(co, placed, teams, team_colors)
+            (placed if p else unplaced)[co.name] = data
+    return placed, unplaced
+
+
+def update_location(combatant, placed, location, out):
+    co_name = combatant.name
+    data = placed.get(co_name, {})
+    data["cell"] = loc_to_cell(location)
+    data["loc"] = location
+    update_adjacent_2(data, placed)
+    placed[co_name] = data
+    update_combatant_note(combatant, {}, location=data["cell"])
+
+
+def update_occupied_2(occupied_grid, space_mod, data, width, height):
+    top = (data["loc"][0] - space_mod, data["loc"][1] - space_mod)
+    xbound, ybound = width - space_mod, height - space_mod + 1
+    size = data["size_mod"] + 1
+    occupied_y = list(range(max(top[1], 1), min(top[1] + size + space_mod, ybound)))
+    for x in range(max(top[0], 0), min(data["loc"][0] + size, xbound)):
+        if x in occupied_grid:
+            occupied_grid[x] = list(set(occupied_grid[x] + occupied_y))
+            if height - space_mod <= len(occupied_grid[x]):
+                occupied_grid.pop(x)
+
+
+def place_combatants_2(placed, unplaced, width, height, out, map_state):
+    size_dict = {"T": "Tiny", "S": "Small", "M": "Medium", "L": "Large", "H": "Huge", "G": "Gargantuan"}
+    size_groups = {"G": [], "H": [], "L": [], "M": []}
+    for upc, data in unplaced.items():
+        if not mobl.get_stored_monster_data(data.combatant.monster_name):
+            mobl.fetch_and_store_monster_data()
+
+        size = data.get("size")
+        if not size:
+            size = mobl.get_monster_size(data.combatant.monster_name)
+            data.update({"size": size, "size_mod": get_size_mod(size)})
+        (size_groups[size[0]] if size[0] in "GHL" else size_groups["M"]).append(upc)
+
+    player_side = 0
+    players_x = [p["loc"][0] for p in placed.values() if not autolib.isMonster(p.combatant)]
+    if 0 < len(players_x):
+        player_side = round((sum(players_x) / len(players_x)) / (width - 1))
+
+    map_state["combatants"] = map_state.get("combatants", {})
+    for sg, unplaced_c in size_groups.items():
+        if len(unplaced_c) < 1:
+            continue
+        size_mod = get_size_mod(sg)
+        occupied_grid = {x: [] for x in range(0, width - size_mod)}
+        for data in placed.values():
+            update_occupied_2(occupied_grid, size_mod, data, width, height)
+        sides = {
+            0: range(width // 2 - size_mod - 1, -1, -1),
+            1: range(width // 2, width - size_mod),
+        }
+        y_range = list(range(1, height - size_mod + 1))
+        for upc in unplaced_c:
+            is_monster = autolib.isMonster(unplaced[upc].combatant)
+            side = player_side if not is_monster else 1 - player_side
+            side_cols = [x for x in sides[side] if x in occupied_grid]
+            if not side_cols:
+                side_cols = [x for x in sides[1 - side] if x in occupied_grid][0:1]
+                if not side_cols:
+                    continue
+            x = randchoice(side_cols)
+            y = randchoice([ry for ry in y_range if ry not in occupied_grid[x]])
+            cell = loc_to_cell([x, y])
+            color = unplaced[upc]["color"]
+            combatant = unplaced[upc].combatant
+            placed[upc] = {
+                "cell": cell,
+                "size": sg,
+                "color": color,
+                "combatant": combatant,
+                "loc": (x, y),
+                "size_mod": size_mod,
+            }
+            combatant.set_note(f"Location: {cell} | Color: {color} | Size: {sg} ({size_dict[sg]})")
+
+            update_occupied_2(occupied_grid, size_mod, placed[upc], width, height)
+            out[upc] = placed[upc]
+            map_state["combatants"][upc] = placed[upc]
+            unplaced.pop(upc)
+        # if unplaced:
+        #     err(f"Could not place {combatant.name} on the map without overlapping.")
+
+
+def distance_2(start, end):
+    dx = abs(end[0] - start[0])
+    dy = abs(end[1] - start[1])
+    straight = abs(dx - dy)
+    diag = min(dx, dy)
+    diag_cost = (diag // 2) * 3 + (1 if diag % 2 else 0)
+    return round(diag_cost + straight)
+
+
+def get_nearest_spaces(spaces, location):
+    nearest_spaces = []
+    min_distance = float("inf")
+    for x, y_range in spaces.items():
+        for y in y_range:
+            dist = distance_2(location, (x, y))
+            if dist < min_distance:
+                min_distance = dist
+                nearest_spaces = [(x, y)]
+            elif dist == min_distance:
+                nearest_spaces.append((x, y))
+    return nearest_spaces
+
+
+def get_farthest_spaces(spaces, location):
+    farthest_spaces = []
+    max_distance = 0
+    for x, y_range in spaces.items():
+        for y in y_range:
+            dist = distance_2(location, (x, y))
+            if max_distance < dist:
+                max_distance = dist
+                farthest_spaces = [(x, y)]
+            elif dist == max_distance:
+                farthest_spaces.append((x, y))
+    return farthest_spaces
+
+
+def get_placed_distances_2(name, target_names, placed):
+    loc, size = placed[name].loc, placed[name].size_mod
+    distances = {}
+    for pc, data in placed.items():
+        if pc != name and pc in target_names and "loc" in data:
+            nearest = get_nearest(loc, size, data.loc, data.size_mod)
+            distances[nearest[0]] = distances.get(nearest[0], []) + [(pc, nearest[1], nearest[2])]
+    dkeys = list(distances.keys())
+    dkeys.sort()
+    return {k: distances[k] for k in dkeys}
+
+
+def filter_true_distance(move_attack_box, location, movement):
+    filtered_box = {}
+    for x, y_range in move_attack_box.items():
+        filtered_y = [y for y in y_range if distance_2(location, (x, y)) <= round(movement) // 5]
+        if filtered_y:
+            filtered_box[x] = filtered_y
+    return filtered_box
+
+
+def create_arrow_overlay(distance, start_cell, end_cell, color="r"):
+    return f"*a{distance}{color}{start_cell}{end_cell}"
+
+
+def move_to_location(combatant, start_location, to_location):
+    start_cell, to_cell = loc_to_cell(start_location), loc_to_cell(to_location)
+    update_combatant_note(combatant, {}, location=to_cell)
+    move_distance = distance_2(start_location, to_location) * 5
+    phrase = f"Moving from {start_cell} to {to_cell} (~{move_distance} ft.)"
+    overlays = [create_arrow_overlay(move_distance, start_cell, to_cell)]
+    map = generate_map_image(overlays)
+    return phrase, map
+
+
+# Size Functions
 
 
 # Sizes: <=M: 0, L: 1, H: 2, G: 3

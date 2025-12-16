@@ -40,11 +40,11 @@ using(
     #presets test
     # presets = "9262c036-97ad-4c8b-a34c-ee0d351c06e4",
 
-    
+
     # mapl = "faa1ca51-5c75-401c-be46-8650472e68f2",
     # mapl test
     mapl = "1d668d94-2807-47ca-b07c-e414b3342b5f",
-    
+
     # mobl = "65c27eae-11c3-4b5c-90e5-472bc49f0037",
     # mobl test
     mobl = "56f70775-86f6-46c5-ae74-acb839bbee74",
@@ -52,7 +52,10 @@ using(
     #targl = "f8369cc0-8ab0-42a5-8dfd-4ab7f34c0e61",
     # Test Versions for targl:
     # targl = "0e93fa5a-ba10-4981-9efb-11f7e114101a" # Old
-    targl = "cb0a8fe6-0eb1-4cc1-a868-f0b4d19cda92" # Latest
+    targl = "cb0a8fe6-0eb1-4cc1-a868-f0b4d19cda92", # Latest
+
+    # Dragon Breath & Recharge Module
+    dragonlib = "739720a9-585a-48a8-aa54-51b4b0e7f190"
 )
 
 if inp1.lower() in ['m', 'map'] and inp2.lower() == 'list':
@@ -150,9 +153,8 @@ if unplaced:
 overlays = []
 desc = []
 
-# Remove dead monsters from combat
-is_current_dead_ally =  c.current and not c.current.type == "group" and (c.current.race or c.current.monster_name) and not autolib.isMonster(c.current) and c.current.hp <= 0 # Need Refactor
-remove_dead = targl.dead_monsters + (targl.dead_allies if is_current_dead_ally else [])
+# Remove dead monsters from combat (only monsters, never players)
+remove_dead = targl.dead_monsters
 if remove_dead:
     for dead_monster in remove_dead:
         on_death = autolib.onDeath(dead_monster.name, c.combatants)
@@ -209,6 +211,10 @@ current_team_enemy_names = [e for e in current_team_enemies if e in [t.name for 
 def get_end_command(i):
     title = "Automation Complete"
     end_turn_text = f'\n\nEnd the turn with `{pref}i n` to continue `{cmd}`'
+
+    # Bounds check to prevent IndexError
+    if i >= len(co_sliced_names):
+        return f'embed -title "{title}" -desc "All combatants have been processed."'
 
     i_name = co_sliced_names[i]
     i_co = c.get_combatant(i_name)
@@ -1117,6 +1123,34 @@ def process_monster_turn(indexed_combatant, out, overlays, desc, snippets=""):
     turn_commands = []
     phrase = ":robot: _Triggered by auto monster AI_"
 
+    # === RECHARGE CHECK ===
+    # Check for recharge abilities at turn start
+    recharge_attacks = dragonlib.get_recharge_attacks(monster)
+    recharge_messages = []
+
+    for recharge_atk in recharge_attacks:
+        # Check if this attack has " Used" effect
+        used_effect = monster.get_effect(f"{recharge_atk['name']} Used")
+
+        if used_effect:
+            # Attempt to recharge
+            recharge_min = recharge_atk['recharge']['min']
+            recharged, roll_result = dragonlib.attempt_recharge(recharge_min)
+
+            if recharged:
+                # Remove the "Used" effect
+                monster.remove_effect(f"{recharge_atk['name']} Used")
+                recharge_msg = dragonlib.get_recharge_phrase(recharge_atk['name'], True, roll_result)
+                recharge_messages.append(recharge_msg)
+            else:
+                # Keep the effect, show failure
+                recharge_msg = dragonlib.get_recharge_phrase(recharge_atk['name'], False, roll_result)
+                recharge_messages.append(recharge_msg)
+
+    # Add recharge messages to phrase if any
+    if recharge_messages:
+        phrase = '\n'.join(recharge_messages) + '\n' + phrase
+
     # Teams
     team = 1
     for t in teams:
@@ -1124,6 +1158,12 @@ def process_monster_turn(indexed_combatant, out, overlays, desc, snippets=""):
             team = t
             break
     targets = [co for t in teams if t != team for co in teams[t]]
+
+    # Safety check: if no targets available, monsters have no one to attack
+    if not targets:
+        turn_commands.append(f'embed -title "{monster.name}: No Targets Available" -desc "**{monster.name}** stands ready, but there are no healthy combatants to attack."')
+        turn_commands.append('i n')
+        return turn_commands
 
     # Get location from note
     co_map_data = placed.get(indexed_combatant, {})
@@ -1152,6 +1192,83 @@ def process_monster_turn(indexed_combatant, out, overlays, desc, snippets=""):
 
         # Create a list of all potential targets (excluding the monster itself)
         potential_targets = [name for name in all_combatants if name != monster.name]
+
+        ### BREATH WEAPONS ###
+        breath_attacks = dragonlib.get_breath_attacks(monster)
+
+        # Filter to only available (recharged) breath weapons
+        available_breaths = []
+        for breath_atk in breath_attacks:
+            # Check if breath is available (no " Used" effect)
+            if not monster.get_effect(f"{breath_atk['name']} Used"):
+                available_breaths.append(breath_atk)
+
+        if available_breaths:
+            # Choose a random available breath weapon
+            breath_weapon = randchoice(available_breaths)
+
+            # Use proper cone/line targeting algorithms
+            best_aim = None
+            affected_targets = []
+
+            if breath_weapon['shape']['shape'] == 'cone':
+                # Find optimal cone aim
+                best_aim, affected_targets = dragonlib.find_best_cone_aim(
+                    location,
+                    potential_targets,
+                    breath_weapon['shape']['size'],
+                    c,
+                )
+            elif breath_weapon['shape']['shape'] == 'line':
+                # Find optimal line aim
+                best_aim, affected_targets = dragonlib.find_best_line_aim(
+                    location,
+                    potential_targets,
+                    breath_weapon['shape']['size'],
+                    breath_weapon['shape'].get('width', 5),
+                    c,
+                )
+
+            if best_aim and affected_targets:
+                # Create breath weapon overlay with correct color
+                breath_overlay = dragonlib.create_breath_overlay(
+                    location,
+                    best_aim,
+                    breath_weapon['shape'],
+                    breath_weapon['type']
+                )
+
+                if breath_overlay:
+                    overlays.append(f"*{breath_overlay}")
+                    desc.append(f"{monster.name} unleashes its **{breath_weapon['name']}** ({breath_weapon['type']['name']}) towards {best_aim}!")
+
+                    # Display the map with the breath overlay
+                    map_url = mapl.generate_map_image(overlays)
+                    turn_commands.append(f'embed -title "Breath Weapon: {monster.name}" -desc "{desc[-1]}" -image "{map_url}"')
+
+                    # Build breath attack phrase
+                    targets_hit = len(affected_targets)
+                    breath_phrase = dragonlib.format_breath_attack_phrase(
+                        breath_weapon['name'],
+                        breath_weapon['type'],
+                        targets_hit,
+                        recharge_msg="" # Recharge msg already in main phrase
+                    )
+
+                    # Add the attack command targeting all affected combatants
+                    if affected_targets:
+                        target_string = " -t ".join(affected_targets)
+                        turn_commands.append(f'i a "{breath_weapon["name"]}" -t {target_string} -phrase "{phrase}\n{breath_phrase}"')
+
+                        # Add " Used" effect to track that breath was used
+                        if breath_weapon.get('recharge'):
+                            monster.add_effect(f"{breath_weapon['name']} Used", duration=-1, desc=f"Recharge {breath_weapon['recharge']['min']}-6")
+                    else:
+                        desc.append(f"No targets were caught in the breath!")
+
+                    turn_commands.append('i n')
+                    return turn_commands
+        ### BREATH WEAPONS ###
 
         ### AoE ###
         aoe_attacks = mobl.get_aoe_attacks(monster.name)

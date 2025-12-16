@@ -131,9 +131,6 @@ def get_cell_pixel(size, map_name):
     return "c50"
 
 
-map_presets = extract_map_info()
-
-
 def initialize_map(map_name, map_state):
     if map_name in map_presets:
         map_state["current_map"] = map_name
