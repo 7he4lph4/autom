@@ -7,45 +7,79 @@ using(
 
 # === RECHARGE MECHANICS ===
 
-def parse_recharge(attack_desc):
+def parse_recharge(attack_raw):
     """
-    Extract recharge information from attack description.
-    Returns dict with 'min' value needed to recharge, or None if not a recharge ability.
-    Examples: "Recharge 5-6" -> {'min': 5}, "Recharge 6" -> {'min': 6}
+    Extract recharge information from attack.raw automation structure.
+    Returns dict with 'min' value needed to recharge and 'dice' to roll, or None if not a recharge ability.
+    Example: {'min': 5, 'dice': '1d6'}
     """
-    if not attack_desc:
+    if not attack_raw or typeof(attack_raw) != 'SafeDict':
         return None
 
-    attack_lower = attack_desc.lower()
-
-    # Check for recharge pattern
-    if "recharge" not in attack_lower:
+    # Look through automation for buttons with recharge
+    automation = attack_raw.get('automation', [])
+    if not automation:
         return None
 
-    # Extract the number(s) after "recharge"
-    # Pattern: "recharge X-Y" or "recharge X"
-    words = attack_lower.split()
-    for i, word in enumerate(words):
-        if "recharge" in word and i + 1 < len(words):
-            next_word = words[i + 1].strip('():;,.')
-            # Handle "5-6" format
-            if '-' in next_word:
-                min_val = next_word.split('-')[0]
-                if min_val and min_val.isdigit():
-                    return {'min': int(min_val)}
-            # Handle single number "6"
-            elif next_word.isdigit():
-                return {'min': int(next_word)}
+    for auto_entry in automation:
+        if typeof(auto_entry) != 'SafeDict':
+            continue
+
+        # Check for target with effects that have buttons
+        if auto_entry.get('type') == 'target':
+            effects = auto_entry.get('effects', [])
+            for effect in effects:
+                if typeof(effect) != 'SafeDict':
+                    continue
+
+                buttons = effect.get('buttons', [])
+                for button in buttons:
+                    if typeof(button) != 'SafeDict':
+                        continue
+
+                    # Check if this is a recharge button
+                    label = button.get('label', '').lower()
+                    if 'recharge' not in label:
+                        continue
+
+                    # Parse the button automation
+                    button_auto = button.get('automation', [])
+                    recharge_dice = '1d6'  # Default
+                    recharge_min = None
+
+                    for btn_entry in button_auto:
+                        if typeof(btn_entry) != 'SafeDict':
+                            continue
+
+                        # Get dice roll
+                        if btn_entry.get('type') == 'roll' and btn_entry.get('name') == 'recharge':
+                            recharge_dice = btn_entry.get('dice', '1d6')
+
+                        # Get condition with minimum value
+                        if btn_entry.get('type') == 'condition':
+                            condition = btn_entry.get('condition', '')
+                            # Parse "int(recharge) >= 5" or similar
+                            if '>=' in condition:
+                                parts = condition.split('>=')
+                                if len(parts) == 2:
+                                    min_str = parts[1].strip()
+                                    # Remove any trailing characters
+                                    min_str = ''.join([c for c in min_str if c.isdigit()])
+                                    if min_str:
+                                        recharge_min = int(min_str)
+
+                    if recharge_min is not None:
+                        return {'min': recharge_min, 'dice': recharge_dice}
 
     return None
 
 
-def attempt_recharge(recharge_min):
+def attempt_recharge(recharge_min, dice='1d6'):
     """
-    Attempt to recharge an ability. Rolls 1d6.
+    Attempt to recharge an ability. Rolls specified dice (default 1d6).
     Returns tuple: (success: bool, roll_result: str from vroll)
     """
-    roll_result = vroll("1d6")
+    roll_result = vroll(dice)
     roll_value = roll_result.total
     success = roll_value >= recharge_min
 
@@ -80,14 +114,14 @@ def has_recharge_ability(monster):
 def get_recharge_attacks(monster):
     """
     Get all attacks with recharge from a monster.
-    Returns list of dicts: [{'attack': attack_obj, 'name': str, 'recharge': {'min': int}}]
+    Returns list of dicts: [{'attack': attack_obj, 'name': str, 'recharge': {'min': int, 'dice': str}}]
     """
     recharge_attacks = []
 
     for attack in monster.attacks:
-        # Get attack description/automation text
-        attack_text = get_attack_desc(attack)
-        recharge_info = parse_recharge(attack_text)
+        # Get attack.raw and parse recharge from automation structure
+        attack_raw = attack.raw if attack else None
+        recharge_info = parse_recharge(attack_raw)
 
         if recharge_info:
             recharge_attacks.append({

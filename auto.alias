@@ -244,9 +244,6 @@ def get_end_command(i):
     elif i_co.hp <= 0: # Stop on dead combatant
         return f'embed -title "{title}: Dead Monster" -desc "**{i_name}** has **0 HP**.\n\nContinue `{cmd}` to remove dead monsters from combat."'
 
-    elif i_co.get_effect(' Used') and 0 < i: # Stop on recharge ability
-        return f'embed -title "{title}: Recharge Ability" -desc "**{i_name}** is recharging an ability.\n\nAfter attempting to recharge, continue `{cmd}` to automate them."'
-    
     elif i_co.get_effect('Stop Automation (auto)'): # Stop on !stopauto
         return f'embed -title "{title}: Stop Auto" -desc "**{i_name}** has stopped automation.{end_turn_text}"'
 
@@ -800,12 +797,9 @@ def attempt_spell_cast_in_range(monster, spell_name, spell_level, spell_range, t
 
         # **CONE HANDLING**
         elif aoe_shape == "Cone":
-            turn_commands.append(f'embed -title "DEBUG: Cone Detected" -desc "Spell: {spell_name}, Shape: {aoe_shape}, Size: {aoe_size}"')
             caster_location = mapl.coords_to_loc(monster_pos)
             all_target_names = [t["name"] for t in all_positions.values()]
-            turn_commands.append(f'embed -title "DEBUG: Cone Setup" -desc "Caster: {caster_location}, All Targets: {all_target_names}, Team: {monster_team}"')
             best_aim, hits_all, enemy_names = dragonlib.find_best_cone_aim(caster_location, all_target_names, aoe_size, c, monster_team, teams)
-            turn_commands.append(f'embed -title "DEBUG: Cone Aim Result" -desc "best_aim: {best_aim}, hits_all: {hits_all}, enemy_names: {enemy_names}"')
 
             if best_aim and enemy_names:
                 overlays.append(f"*t{aoe_size}{overlay_color}{caster_location}{best_aim}")
@@ -814,7 +808,6 @@ def attempt_spell_cast_in_range(monster, spell_name, spell_level, spell_range, t
                 map_url = mapl.generate_map_image(overlays)
                 turn_commands.append(f'embed -title "{monster.name} casts cone spell - {spell_name}!" -desc "{desc[-1]}" -image "{map_url}"')
             else:
-                turn_commands.append(f'embed -title "DEBUG: Cone Failed" -desc "Falling back to single target: {chosen_target}"')
                 target_string = f'-t "{chosen_target}"'
                 desc.append(f"{indexed_combatant} casts *{spell_name}*")
 
@@ -1052,9 +1045,10 @@ def process_monster_turn(indexed_combatant, out, overlays, desc, snippets=""):
         used_effect = monster.get_effect(f"{recharge_atk['name']} Used")
 
         if used_effect:
-            # Attempt to recharge
+            # Always attempt to recharge and show the roll
             recharge_min = recharge_atk['recharge']['min']
-            recharged, roll_result = dragonlib.attempt_recharge(recharge_min)
+            recharge_dice = recharge_atk['recharge'].get('dice', '1d6')
+            recharged, roll_result = dragonlib.attempt_recharge(recharge_min, recharge_dice)
 
             if recharged:
                 # Remove the "Used" effect
@@ -1062,13 +1056,14 @@ def process_monster_turn(indexed_combatant, out, overlays, desc, snippets=""):
                 recharge_msg = dragonlib.get_recharge_phrase(recharge_atk['name'], True, roll_result)
                 recharge_messages.append(recharge_msg)
             else:
-                # Keep the effect, show failure
+                # Keep the effect, show failure roll
                 recharge_msg = dragonlib.get_recharge_phrase(recharge_atk['name'], False, roll_result)
                 recharge_messages.append(recharge_msg)
 
-    # Add recharge messages to phrase if any
+    # Create recharge embed only if there were used abilities attempting to recharge
     if recharge_messages:
-        phrase = '\n'.join(recharge_messages) + '\n' + phrase
+        recharge_desc = '\n'.join(recharge_messages)
+        turn_commands.append(f'embed -title "{monster.name}: Recharge Check" -desc "{recharge_desc}"')
 
     # Teams
     team = 1
