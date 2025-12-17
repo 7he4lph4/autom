@@ -192,7 +192,7 @@ def load_specific_map(map_state, map_attach, map_name=""):
     map_state["bg_image"] = map_data["image"]
 
     # Update the map effect on the map attach
-    neweffect = f"Size: {map_state['size']} ~ Background: {map_state['bg_image']} ~ Options: {map_state['mapoptions']}"
+    neweffect = f"Size: {map_state['size']} ~ Background: {map_state['bg_image']} ~ Options: {map_state['mapoptions']} ~ Name: {map_name}"
     map_attach.remove_effect("map")
     map_attach.add_effect(
         "map",

@@ -5,6 +5,7 @@ using(
     mapl="51af2e97-64e3-444a-994c-61c45c3f0994",
 )
 
+### DEPRECATED BBCODE ###
 bbcode = """
 [url=https://ibb.co/TW0G3zm][img]https://i.ibb.co/y4kCjLW/Arena-of-Earth-Desert-Day-32x24.jpg[/img][/url]
 [url=https://ibb.co/KxbXvj7][img]https://i.ibb.co/yFdXjn5/Arena-of-Earth-Desert-Night-32x24.jpg[/img][/url]
@@ -127,10 +128,7 @@ def extract_map_info():
 map_presets = extract_map_info()
 
 def get_cell_pixel(size, map_name):
-    return "c40"
-
-
-map_presets = extract_map_info()
+    return "c50"
 
 
 def initialize_map(map_name, map_state):
@@ -168,7 +166,7 @@ def generate_list_embeds(footer):
     chunks = [map_list[i : i + chunk_size] for i in range(0, len(map_list), chunk_size)]
     return [
         (
-            f'{pref}embed -title "Available Map Presets (Page {i+1}/{len(chunks)})" -desc "'
+            f'embed -title "Available Map Presets (Page {i+1}/{len(chunks)})" -desc "'
             + "\n".join(chunk)
             + f'" -footer "{footer}"'
         )
@@ -194,7 +192,7 @@ def load_specific_map(map_state, map_attach, map_name=""):
     map_state["bg_image"] = map_data["image"]
 
     # Update the map effect on the map attach
-    neweffect = f"Size: {map_state['size']} ~ Background: {map_state['bg_image']} ~ Options: {map_state['mapoptions']}"
+    neweffect = f"Size: {map_state['size']} ~ Background: {map_state['bg_image']} ~ Options: {map_state['mapoptions']} ~ Name: {map_name}"
     map_attach.remove_effect("map")
     map_attach.add_effect(
         "map",

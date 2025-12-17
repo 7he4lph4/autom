@@ -31,28 +31,24 @@ if not c or inp in ['help', '?']:
 footer = f'{cmd} help | made by @alpha983'
 
 using(
-    # autolib = "ec14bc6e-81e4-4df7-86e9-5d64ed2fa9b7",
-    # autolib test
+    # autolib = "ec14bc6e-81e4-4df7-86e9-5d64ed2fa9b7", # autolib test
     autolib = "b02daf2d-7cfc-4b0c-8fd2-f7be253e8f13",
 
     core = "49f5f503-1c00-4f24-ba43-92e65c2c2fb6",
+
     presets = "c14e4526-4acb-4964-8ba9-f6861617ffdf",
-    #presets test
-    # presets = "9262c036-97ad-4c8b-a34c-ee0d351c06e4",
+    # presets = "9262c036-97ad-4c8b-a34c-ee0d351c06e4", #presets test
 
 
-    # mapl = "faa1ca51-5c75-401c-be46-8650472e68f2",
-    # mapl test
+    # mapl = "faa1ca51-5c75-401c-be46-8650472e68f2", # mapl test
     mapl = "1d668d94-2807-47ca-b07c-e414b3342b5f",
 
-    # mobl = "65c27eae-11c3-4b5c-90e5-472bc49f0037",
-    # mobl test
+    # mobl = "65c27eae-11c3-4b5c-90e5-472bc49f0037", # mobl test
     mobl = "56f70775-86f6-46c5-ae74-acb839bbee74",
 
-    #targl = "f8369cc0-8ab0-42a5-8dfd-4ab7f34c0e61",
-    # Test Versions for targl:
-    # targl = "0e93fa5a-ba10-4981-9efb-11f7e114101a" # Old
-    targl = "cb0a8fe6-0eb1-4cc1-a868-f0b4d19cda92", # Latest
+    #targl = "f8369cc0-8ab0-42a5-8dfd-4ab7f34c0e61", #test
+    # targl = "0e93fa5a-ba10-4981-9efb-11f7e114101a" # Old #test
+    targl = "cb0a8fe6-0eb1-4cc1-a868-f0b4d19cda92",
 
     # Dragon Breath & Recharge Module
     dragonlib = "739720a9-585a-48a8-aa54-51b4b0e7f190"
@@ -132,8 +128,28 @@ monster_names = [mon.name for mon in monster_list]
 max_combatants = 4
 max_commands = 10
 
-if (inp1.lower() in ['m', 'map']) or not map_info:
-    map_name = inp2 if inp1.lower() in ['m', 'map'] else ""
+# Check if we need to load/reload a map
+load_map = False
+map_name = ""
+
+if inp1.lower() in ['m', 'map']:
+    # Explicit map command - always load
+    map_name = inp2
+    load_map = True
+elif not map_info:
+    # No map loaded - check metadata or load random
+    preset_map = c.get_metadata("auto_preset_map")
+    map_name = preset_map if preset_map else ""
+    load_map = True
+else:
+    # Map exists - check if metadata requires a change
+    preset_map = c.get_metadata("auto_preset_map")
+    current_map_name = map_info.get("name", "")
+    if preset_map and preset_map != current_map_name:
+        map_name = preset_map
+        load_map = True
+
+if load_map:
     message = presets.load_specific_map(map_state, map_attach, map_name)
     width, height = mapl.parse_mapsize(map_state.get("size"))
     map_info = {"size": f"{width}x{height}", "background": map_state.get("bg_image", ""), "options": map_state.get("mapoptions", "")}
