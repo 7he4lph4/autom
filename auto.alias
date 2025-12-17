@@ -74,6 +74,7 @@ commands = []
 
 combatants = c.combatants
 combatant_list, party_list, monster_list = targl.get_target_lists()
+ALLY_EFFECT = autolib.ALLY_EFFECT
 
 # Map-related variables
 alph = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
@@ -240,6 +241,9 @@ def get_end_command(i):
      
     elif not i_co.monster_name: # Stop on objects
         return f'embed -title "{title}: Object" -desc "**{i_name}** is not a player or monster.{end_turn_text}"'
+
+    elif i_co.hp <= 0 and i_co.monster_name and i_co.get_effect(ALLY_EFFECT):
+        return f'embed -title "{title}: Dead Monster Ally" -desc "**{i_name}** has **0 HP**.\n\nHeal them or use `{pref}i n` to remove them.\n\nYou can use `{pref}i meta deathdelete` to disable <@261302296103747584> from removing all dead monsters but `{cmd}` will still remove dead non-allied monsters."'
 
     elif i_co.hp <= 0: # Stop on dead combatant
         return f'embed -title "{title}: Dead Monster" -desc "**{i_name}** has **0 HP**.\n\nContinue `{cmd}` to remove dead monsters from combat."'
