@@ -54,6 +54,26 @@ using(
     dragonlib = "739720a9-585a-48a8-aa54-51b4b0e7f190"
 )
 
+def add_map_links(cmds):
+    """Append map link to all embeds with images"""
+    for i, cmd in enumerate(cmds):
+        if '-image "http' in cmd:
+            url_start = cmd.find('-image "') + 8
+            url_end = cmd.find('"', url_start)
+            img_url = cmd[url_start:url_end]
+            if '-desc "' in cmd:
+                cmds[i] = cmd.replace('-desc "', f'-desc "[Map Link]({img_url})\n')
+            else:
+                cmds[i] = cmd.replace('-image', f'-desc "[Map Link]({img_url})" -image')
+    return cmds
+
+# Spells that push targets away from caster (distance in feet)
+PUSH_SPELLS = {
+    "Thunderwave": 10,
+    "Gust of Wind": 15,
+    "Thorn Whip": -10,  # Negative = pull towards caster
+}
+
 if inp1.lower() in ['m', 'map'] and inp2.lower() == 'list':
     return f'\n{pref}'.join(["multiline"] + presets.generate_list_embeds(footer))
 
@@ -199,6 +219,7 @@ if remove_dead:
 
 if not targl.monsters:
     commands.append(f'embed -title "No Monsters to Automate" -desc "There are no monsters in combat.\n\nRun `{cmd}` after adding monsters to place them on the map."')
+    add_map_links(commands)
     if 1 < len(commands): commands.insert(0, "multiline")
     return f'\n{pref}'.join(commands)
 
@@ -281,6 +302,7 @@ auto_monster_turns = {}
 end_command = get_end_command(0)
 if end_command:
     commands.append(end_command)
+    add_map_links(commands)
     if 1 < len(commands):
         commands.insert(0, "multiline")
     return f'\n{pref}'.join(commands)
@@ -642,11 +664,15 @@ def preprocess_spell_data(spell_list, spell_data):
     spell_ranges = {}
     spell_aoe_info = {}
     
-    # Range/AoE shape mapping for quick lookup
+    # Range/AoE shape mapping - spell gvar uses: R=Radius, L=Line, Q=Square, C=Cone
+    # Note: parser lowercases shape codes, so C->c, R->r, etc.
     shape_map = {
-        "u": "Radius", "r": "Radius", "t": "Square", "q": "Square",
-        "g": "Cone", "c": "Cone", "p": "Line", "l": "Line", "w": "Wall", "a": "Feet",
-        "s": "Self", "v": "Self", "y": "Sight", "z": "Willing", "x": "Unlimited"
+        "r": "Radius",
+        "c": "Cone",   # spell gvar uses C for Cone (e.g., SC60 = Self Cone 60ft)
+        "q": "Square", "t": "Square",  # Q=cube/square, t=OTFBM square
+        "g": "Cone",   # legacy
+        "l": "Line",
+        "w": "Wall", "a": "Feet", "s": "Self", "y": "Sight", "x": "Unlimited"
     }
     
     for spell_name in spell_list:
@@ -781,7 +807,7 @@ def attempt_spell_cast_in_range(monster, spell_name, spell_level, spell_range, t
         aoe_shape = aoe_data["shape"]
         aoe_size = aoe_data["size"]
         aoe_origin = aoe_data["origin"]
-        
+
         # Get team info and pre-compute positions once
         monster_team = mapl.get_combatant_team(indexed_combatant, teams)
         overlay_color = team_colors.get(monster_team, "r")
@@ -846,6 +872,76 @@ def attempt_spell_cast_in_range(monster, spell_name, spell_level, spell_range, t
             else:
                 target_string = f'-t "{chosen_target}"'
                 desc.append(f"{indexed_combatant} casts *{spell_name}*")
+
+        # **SQUARE/CUBE HANDLING** (e.g., Thunderwave)
+        elif aoe_shape == "Square":
+            cube_size = aoe_size // 5  # Convert ft to grid squares (15ft = 3 squares)
+            half_size = cube_size // 2  # Offset to center caster in square
+
+            # Calculate top-left corner to center the caster in the square
+            top_left_x = monster_pos[0] - half_size
+            top_left_y = monster_pos[1] - half_size
+            top_left_loc = mapl.coords_to_loc((top_left_x, top_left_y))
+
+            # AABB collision: find all creatures within the square bounds
+            targets_in_cube = []
+            for name, data in all_positions.items():
+                px, py = data["pos"]
+                # Check if creature is within square: top_left <= pos < top_left + size
+                if top_left_x <= px < top_left_x + cube_size and top_left_y <= py < top_left_y + cube_size:
+                    targets_in_cube.append({"name": name, "team": data["team"], "pos": data["pos"]})
+
+            # Square overlay with top-left positioning
+            overlays.append(f"*s{aoe_size}{overlay_color}{top_left_loc}")
+
+            # Check for push effect
+            push_dist = PUSH_SPELLS.get(spell_name, 0)
+            push_squares = push_dist // 5 if push_dist else 0
+
+            if targets_in_cube:
+                enemies = [t for t in targets_in_cube if t["team"] != monster_team]
+                allies = [t for t in targets_in_cube if t["team"] == monster_team]
+                target_string = " ".join(f'-t "{t["name"]}"' for t in targets_in_cube)
+
+                # Apply push to enemies if spell has push effect
+                if push_squares and enemies:
+                    for enemy in enemies:
+                        ex, ey = enemy["pos"]
+                        # Direction vector from caster to enemy
+                        dx = ex - monster_pos[0]
+                        dy = ey - monster_pos[1]
+                        dist = sqrt(dx*dx + dy*dy) if (dx or dy) else 1
+                        # Normalize and scale by push distance
+                        push_dx = round((dx / dist) * push_squares) if dist else push_squares
+                        push_dy = round((dy / dist) * push_squares) if dist else 0
+                        # New position after push
+                        new_x = ex + push_dx
+                        new_y = ey + push_dy
+                        new_pos = (new_x, new_y)
+
+                        # Draw arrow showing push (format: *a{distance}{color}{start}{end})
+                        start_loc = mapl.coords_to_loc((ex, ey))
+                        end_loc = mapl.coords_to_loc(new_pos)
+                        overlays.append(f"*a{push_dist}{overlay_color}{start_loc}{end_loc}")
+
+                        # Actually move the pushed creature
+                        enemy_combatant = c.get_combatant(enemy["name"])
+                        if enemy_combatant:
+                            mapl.update_position(enemy_combatant, placed, new_pos, out)
+
+                enemy_names = ", ".join([t["name"] for t in enemies])
+                ally_names = ", ".join([t["name"] for t in allies])
+                hit_desc = f"{len(enemies)} enemies: {enemy_names}" if enemies else "no enemies"
+                if allies:
+                    hit_desc += f" + ⚠️{len(allies)} allies: {ally_names}"
+                push_desc = f" (pushed {push_dist} ft.)" if push_squares and enemies else ""
+                desc.append(f"{indexed_combatant} casts {spell_name} cube centered on self - {aoe_size} ft. hitting {hit_desc}{push_desc}")
+            else:
+                target_string = f'-t "{chosen_target}"'
+                desc.append(f"{indexed_combatant} casts {spell_name} cube centered on self - {aoe_size} ft. (no targets in area)")
+
+            map_url = mapl.generate_map_image(overlays)
+            turn_commands.append(f'embed -title "{monster.name} casts cube spell - {spell_name}!" -desc "{desc[-1]}" -image "{map_url}"')
 
         else:
             # Non-circle AoE fallback
@@ -947,6 +1043,41 @@ def attempt_spell_cast_with_movement(monster, spell_name, spell_level, spell_ran
                 overlays.append(f"*l{aoe_data['size']},5{overlay_color}{caster_location}{best_aim}")
                 target_string = " ".join(f'-t "{name}"' for name in affected_targets)
                 movement_desc = f"aims {spell_name} line towards {best_aim} - {aoe_data['size']}x5 ft. hitting {len(affected_targets)} targets: {', '.join(affected_targets)}"
+
+        elif aoe_data["shape"] == "Square":
+            monster_team = mapl.get_combatant_team(indexed_combatant, teams)
+            overlay_color = team_colors.get(monster_team, "r")
+            team_positions, all_positions = get_team_positions(teams, placed, indexed_combatant)
+
+            cube_size = aoe_data["size"] // 5
+            half_size = cube_size // 2
+
+            # Calculate top-left corner to center the caster in the square
+            top_left_x = new_pos[0] - half_size
+            top_left_y = new_pos[1] - half_size
+            top_left_loc = mapl.coords_to_loc((top_left_x, top_left_y))
+
+            # AABB collision: find all creatures within the square bounds
+            targets_in_cube = []
+            for name, data in all_positions.items():
+                px, py = data["pos"]
+                if top_left_x <= px < top_left_x + cube_size and top_left_y <= py < top_left_y + cube_size:
+                    targets_in_cube.append({"name": name, "team": data["team"]})
+
+            overlays.append(f"*s{aoe_data['size']}{overlay_color}{top_left_loc}")
+
+            if targets_in_cube:
+                enemies = [t for t in targets_in_cube if t["team"] != monster_team]
+                allies = [t for t in targets_in_cube if t["team"] == monster_team]
+                target_string = " ".join(f'-t "{t["name"]}"' for t in targets_in_cube)
+                enemy_names = ", ".join([t["name"] for t in enemies])
+                ally_names = ", ".join([t["name"] for t in allies])
+                hit_desc = f"{len(enemies)} enemies: {enemy_names}" if enemies else "no enemies"
+                if allies:
+                    hit_desc += f" + ⚠️{len(allies)} allies: {ally_names}"
+                movement_desc = f"casts {spell_name} cube centered on self - {aoe_data['size']} ft. hitting {hit_desc}"
+            else:
+                movement_desc = f"casts {spell_name} cube centered on self - {aoe_data['size']} ft. (no targets in area)"
 
     # Build final description
     movement_verb = 'move' if monster_move_verb == 'walk' else '*fly*'
@@ -1440,6 +1571,8 @@ map_state["combatants"] = out
 if overlays:
     map_url = mapl.generate_map_image(overlays)
     commands += [f'embed -title "Monster Movement Summary" -desc "Monster movements so far:" -image "{map_url}"']
+
+add_map_links(commands)
 
 if 1 < len(commands):
     commands.insert(0, "multiline")
