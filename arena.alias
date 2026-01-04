@@ -803,6 +803,12 @@ def get_help_text():
 `{cmd} collect bets` - Collect winnings after battle ends
 `{cmd} bets` - Show current betting status
 
+**🏆 After the Battle:**
+Once one team emerges victorious or all teams are eliminated:
+- `{cmd} collect bets` - Collect your winnings (winners get double their bet!)
+- `{cmd} end` - Clear the arena and reset for a new battle
+- **Note:** Betting automatically closes once any monster takes damage, and payouts are processed when the battle concludes
+
 **🎯 Betting Rules:**
 • **One bet per player** per arena battle
 • **Betting closes** once any monster takes damage

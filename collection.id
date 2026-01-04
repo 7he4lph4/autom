@@ -1,6 +1,7 @@
 {
   "aliases": {
-    "auto": "6940dbc163d2a31bdb9cf934"
+    "auto": "6940dbc163d2a31bdb9cf934", 
+    "arena": "695a7fa916527fcb82d3d83c"
   }, 
   "collection": "6940dba263d2a31bdb9cf932", 
   "name": "Auto dev", 
