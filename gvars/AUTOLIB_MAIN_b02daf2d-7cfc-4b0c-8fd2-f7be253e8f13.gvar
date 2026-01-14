@@ -312,19 +312,24 @@ def detectMonsterVersion(monster_name, combat):
 
 # Parse the monster data for multi-attacks - now with version detection
 def getMultiAttacks(monster_name, combat=None):
-    """Get multiattack data for a monster, auto-detecting version if combat provided"""
-    
+    """Get multiattack data for a monster, auto-detecting version if combat provided
+    Fallback chain: 2025 -> 2014 (MOBL fallback handled at alias level)"""
+
     # Detect version if combat object provided
     if combat:
         version = detectMonsterVersion(monster_name, combat)
     else:
         # Fall back to svar or default
         version = get_svar("autoVersion", "2025")
-    
+
     if version == "2014":
         return getMultiAttacks2014(monster_name)
     else:
-        return getMultiAttacks2025(monster_name)
+        # 2025 primary, fallback to 2014 if not found
+        result = getMultiAttacks2025(monster_name)
+        if result:
+            return result
+        return getMultiAttacks2014(monster_name)
 
 def getMultiAttacks2014(monster_name):
     """Get multiattack data for 2014 format monsters"""
